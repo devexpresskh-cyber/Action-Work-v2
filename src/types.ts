@@ -281,9 +281,138 @@ export interface AttendanceRecord {
   notes?: string;
   location?: string;
   ipAddress?: string;
-  checkInMethod: 'Web Portal' | 'Biometric Sync' | 'QR Code' | 'Manual Adjustment';
+  checkInMethod: 'Web Portal' | 'Biometric Sync' | 'QR Code' | 'Manual Adjustment' | 'Manual Self-Attestation (Zero-Tracking)';
   verifiedBy?: string;
   createdAt: string;
+  // Privacy & Tracking Prevention Attributes
+  isAnonymized?: boolean;
+  privacyMode?: 'Zero-Tracking' | 'Standard' | 'VPN-Masked' | 'Manual-Protected';
+  locationAnonymized?: boolean;
+  vpnProtected?: boolean;
+  zeroSignalVerified?: boolean;
+  // Workplace Wi-Fi & IP Whitelist Verification
+  networkWhitelisted?: boolean;
+  networkId?: string;
+  networkName?: string;
+  ssid?: string;
+  seamlessVerified?: boolean;
+}
+
+export interface WorkplaceNetwork {
+  id: string;
+  name: string; // e.g., 'Phnom Penh HQ - Primary Wi-Fi (Floor 1-5)'
+  nameKm?: string;
+  ssid: string; // e.g., 'CORP-HQ-SECURE-5G'
+  bssidPrefix?: string; // e.g., '74:83:C2:B1'
+  ipRanges: string[]; // e.g., ['192.168.1.0/24', '192.168.2.0/24']
+  gatewayIp: string; // e.g., '192.168.1.1'
+  dnsServers: string[]; // e.g., ['192.168.1.2', '1.1.1.1']
+  locationName: string; // e.g., 'Phnom Penh HQ - Main Tower'
+  departmentId?: string; // 'all' or specific department ID
+  securityType: 'WPA3 Enterprise (802.1X)' | 'WPA2/WPA3 Personal' | 'Corporate VPN Tunnel' | 'Dedicated Lease Line';
+  status: 'Active' | 'Under Maintenance' | 'Disabled';
+  allowSeamlessCheckIn: boolean; // Enables 1-click frictionless clock in/out
+  firewallConfigured: boolean; // True if port 443, captive portal bypass, etc. active
+  connectedDevicesCount: number;
+  description: string;
+  descriptionKm?: string;
+  addedAt: string;
+  lastActive: string;
+}
+
+export interface NetworkSettingsConfig {
+  enforceMode: 'Flexible' | 'Strict' | 'Advisory'; // Flexible: allow remote with badge; Strict: block non-whitelisted; Advisory: log only
+  seamlessCheckInEnabled: boolean; // 1-click instant check-in when on whitelisted Wi-Fi
+  allowVpnFallback: boolean; // Accept enterprise VPN subnet (10.8.0.0/16) as whitelisted
+  allowedPorts: number[]; // [80, 443, 8443, 123]
+  sslTlsInspectionBypass: boolean; // Bypass deep packet SSL inspection for biometric/auth endpoints
+  captivePortalAutoBypass: boolean; // Whitelist attendance portal URL in captive portal walled garden
+  rateLimitExemption: boolean; // Exempt workplace IP subnets from burst rate-limits at morning clock-in peak
+  mDnsDiscovery: boolean; // Local subnet device discovery
+  sessionTimeoutMinutes: number; // 480 (8 hours)
+  lastUpdated?: string;
+}
+
+export interface NetworkAccessLog {
+  id: string;
+  timestamp: string;
+  employeeId: string;
+  employeeName: string;
+  departmentName: string;
+  clientIp: string;
+  matchedNetworkId?: string;
+  matchedNetworkName?: string;
+  ssid?: string;
+  whitelistStatus: 'Whitelisted (Seamless)' | 'External / Remote' | 'Blocked (Non-Whitelisted)' | 'VPN-Secured';
+  action: 'Check-In' | 'Check-Out' | 'Heartbeat / Ping' | 'Portal Access';
+  latencyMs: number;
+  userAgent: string;
+  flaggedReason?: string;
+}
+
+export interface CurrentNetworkConnection {
+  networkId: string;
+  networkName: string;
+  ssid: string;
+  clientIp: string;
+  gatewayIp: string;
+  isWhitelisted: boolean;
+  seamlessEligible: boolean;
+  latencyMs: number;
+  connectionType: 'Workplace Wi-Fi' | 'Corporate VPN' | 'Guest Wi-Fi' | 'External / Cellular';
+}
+
+export interface PrivacyAuditRecord {
+  id: string;
+  auditCode: string;
+  auditDate: string; // YYYY-MM-DD
+  auditorId: string;
+  auditorName: string;
+  auditorRole: string;
+  totalRecordsAudited: number;
+  anonymizationRate: number; // e.g. 98.5
+  zeroTrackingRate: number; // e.g. 96.0
+  vpnAdoptionRate: number; // e.g. 94.2
+  exposureRisk: number; // 0.0%
+  status: 'Certified Compliant' | 'Needs Review' | 'Action Required';
+  findings: string[];
+  findingsKm: string[];
+  recommendations: string[];
+  recommendationsKm: string[];
+  certifiedAt: string;
+}
+
+export interface PrivacyFeedback {
+  id: string;
+  userId?: string;
+  userName?: string;
+  isAnonymous: boolean;
+  departmentId?: string;
+  departmentName?: string;
+  category: 
+    | 'GPS / Geolocation Concern' 
+    | 'Wi-Fi Probing / Network Tracking' 
+    | 'VPN Masking & Configuration' 
+    | 'Data Anonymization Request' 
+    | 'Policy Clarification' 
+    | 'General Privacy Suggestion';
+  subject: string;
+  message: string;
+  severity: 'Low' | 'Medium' | 'High' | 'Urgent';
+  status: 'Received' | 'Under Review' | 'Addressed' | 'Resolved';
+  resolutionNotes?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface AttendancePrivacySettings {
+  enforceZeroTracking: boolean;
+  defaultAnonymizeLocation: boolean;
+  enableVpnMasking: boolean;
+  allowManualCheckIn: boolean;
+  dataRetentionDays: number;
+  autoAuditFrequencyDays: number;
+  lastAuditDate?: string;
 }
 
 export interface EmployeeAttendanceSummary {

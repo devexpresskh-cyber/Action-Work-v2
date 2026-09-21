@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, TrendingUp, AlertCircle, Upload, History, Check } from 'lucide-react';
+import { X, TrendingUp, AlertCircle, History, Check } from 'lucide-react';
 import { ActionPlan, Activity, Language, User } from '../types';
 import { translations } from '../services/i18n';
 import { db } from '../services/db';
@@ -28,22 +28,39 @@ export const ProgressModal: React.FC<ProgressModalProps> = ({
 
   const [newPercentage, setNewPercentage] = useState<number>(initialPct);
   const [description, setDescription] = useState<string>('');
-  const [completedWork, setCompletedWork] = useState<string>('');
-  const [problemsObstacles, setProblemsObstacles] = useState<string>('');
-  const [nextActions, setNextActions] = useState<string>('');
-  const [actualKpiResult, setActualKpiResult] = useState<string>(item.actualResult || '');
-  const [evidenceName, setEvidenceName] = useState<string>('');
   const [error, setError] = useState<string>('');
 
   const history = db.getProgressUpdates(item.id);
   const users = db.getUsers();
 
+  const handleQuickComplete = () => {
+    try {
+      const defaultDesc = lang === 'km' 
+        ? 'បានបញ្ចប់ និងផ្ទៀងផ្ទាត់រួចរាល់' 
+        : 'Completed and verified';
+
+      db.addProgressUpdate({
+        entityType,
+        entityId: item.id,
+        previousPercentage: initialPct,
+        newPercentage: 100,
+        description: description.trim() || defaultDesc,
+      });
+
+      onSuccess();
+      onClose();
+    } catch (err: any) {
+      setError(err.message || (lang === 'km' ? 'មិនអាចបញ្ចប់បានទេ។' : 'Failed to complete.'));
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!description.trim()) {
-      setError(lang === 'km' ? 'សូមបញ្ជាក់ការពិពណ៌នាអំពីវឌ្ឍនភាព។' : 'Please provide a description of the progress update.');
-      return;
-    }
+    const finalDescription = description.trim() || (
+      newPercentage === 100 
+        ? (lang === 'km' ? 'បានបញ្ចប់ និងផ្ទៀងផ្ទាត់រួចរាល់' : 'Completed and verified')
+        : (lang === 'km' ? `បានធ្វើបច្ចុប្បន្នភាពវឌ្ឍនភាពទៅ ${newPercentage}%` : `Updated progress to ${newPercentage}%`)
+    );
 
     try {
       db.addProgressUpdate({
@@ -51,12 +68,7 @@ export const ProgressModal: React.FC<ProgressModalProps> = ({
         entityId: item.id,
         previousPercentage: initialPct,
         newPercentage: Number(newPercentage),
-        description,
-        completedWork,
-        problemsObstacles,
-        nextActions,
-        actualKpiResult,
-        supportingEvidence: evidenceName || undefined,
+        description: finalDescription,
       });
 
       onSuccess();
@@ -102,13 +114,36 @@ export const ProgressModal: React.FC<ProgressModalProps> = ({
           )}
 
           <form id="progress-form" onSubmit={handleSubmit} className="space-y-4">
+            {/* Quick Complete Banner */}
+            <div className="p-3.5 rounded-xl bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 flex items-center justify-between gap-3">
+              <div>
+                <div className="flex items-center space-x-1.5 text-xs font-bold text-emerald-900">
+                  <Check className="w-4 h-4 text-emerald-600 stroke-[3]" />
+                  <span>{lang === 'km' ? 'បញ្ចប់កិច្ចការភ្លាមៗ' : 'Quick Complete in 1 Click'}</span>
+                </div>
+                <p className="text-[11px] text-emerald-700 mt-0.5">
+                  {lang === 'km' 
+                    ? 'កំណត់វឌ្ឍនភាព ១០០% និងសម្គាល់ថាបានបញ្ចប់ដោយមិនបាច់បំពេញព័ត៌មានបន្ថែម។' 
+                    : 'Set progress to 100% and finish instantly without typing any extra fields.'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleQuickComplete}
+                className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition shrink-0 flex items-center space-x-1"
+              >
+                <Check className="w-3.5 h-3.5 stroke-[3]" />
+                <span>{lang === 'km' ? 'បញ្ចប់ ១០០%' : '100% Complete'}</span>
+              </button>
+            </div>
+
             {/* Slider / Percentage */}
-            <div>
-              <div className="flex justify-between items-center mb-1.5">
-                <label className="text-xs font-bold text-slate-700">
-                  {t.completionPct}: <span className="text-blue-600 font-mono text-sm">{newPercentage}%</span>
+            <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-2.5">
+              <div className="flex justify-between items-center">
+                <label className="text-xs font-bold text-slate-800">
+                  {t.completionPct}: <span className="text-blue-600 font-mono text-sm font-bold">{newPercentage}%</span>
                 </label>
-                <span className="text-[11px] text-slate-400">
+                <span className="text-[11px] text-slate-500">
                   {lang === 'km' ? `មុន៖ ${initialPct}%` : `Previous: ${initialPct}%`}
                 </span>
               </div>
@@ -119,108 +154,52 @@ export const ProgressModal: React.FC<ProgressModalProps> = ({
                 step="5"
                 value={newPercentage}
                 onChange={e => setNewPercentage(Number(e.target.value))}
-                className="w-full accent-blue-600 cursor-pointer"
+                className="w-full accent-blue-600 cursor-pointer h-2 bg-slate-200 rounded-lg appearance-none"
               />
-              <div className="flex justify-between text-[10px] text-slate-400">
-                <span>0% ({t.notStarted})</span>
-                <span>50% ({t.inProgress})</span>
-                <span>100% ({t.completed})</span>
+              
+              {/* Quick Percentage Preset Buttons */}
+              <div className="flex items-center gap-1.5 pt-1">
+                <span className="text-[11px] font-semibold text-slate-500 mr-1">
+                  {lang === 'km' ? 'កម្រិតរហ័ស៖' : 'Presets:'}
+                </span>
+                {[25, 50, 75, 100].map(val => (
+                  <button
+                    key={val}
+                    type="button"
+                    onClick={() => setNewPercentage(val)}
+                    className={`px-2.5 py-1 rounded-md text-xs font-bold transition ${
+                      newPercentage === val 
+                        ? 'bg-blue-600 text-white shadow-2xs' 
+                        : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-200'
+                    }`}
+                  >
+                    {val === 100 ? (lang === 'km' ? '✓ ១០០% (បញ្ចប់)' : '✓ 100% (Done)') : `${val}%`}
+                  </button>
+                ))}
               </div>
             </div>
 
-            {/* Description */}
+            {/* Single Optional Note - All other unnecessary fills removed */}
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                {lang === 'km' ? 'ការពិពណ៌នាវឌ្ឍនភាព *' : 'Progress Description *'}
-              </label>
-              <textarea
-                rows={2}
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-semibold text-slate-700">
+                  {lang === 'km' ? 'កំណត់ចំណាំវឌ្ឍនភាព (ស្រេចចិត្ត)' : 'Progress Note (Optional)'}
+                </label>
+                <span className="text-[10px] text-slate-400">
+                  {lang === 'km' ? 'អាចទុកទទេរបាន' : 'Leave blank for auto-summary'}
+                </span>
+              </div>
+              <input
+                type="text"
                 value={description}
                 onChange={e => setDescription(e.target.value)}
-                placeholder={lang === 'km' ? 'សេចក្តីសង្ខេបអំពីដំណាក់កាលសម្រេច ឬស្ថានភាព...' : 'Brief summary of milestones or status...'}
-                className="w-full rounded-lg border border-slate-300 p-2 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
-                required
+                placeholder={
+                  newPercentage === 100
+                    ? (lang === 'km' ? 'ឧ. បានបញ្ចប់កិច្ចការ និងបញ្ជាក់លទ្ធផលរួចរាល់' : 'e.g. Completed all deliverables and verified output')
+                    : (lang === 'km' ? 'ឧ. បានបញ្ចប់ដំណាក់កាលទី ១ បន្តជំហានបន្ទាប់' : 'e.g. Finished milestone phase, continuing to next steps')
+                }
+                className="w-full rounded-lg border border-slate-300 p-2.5 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
               />
-            </div>
-
-            {/* Completed Work */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                {t.completedWork}
-              </label>
-              <textarea
-                rows={2}
-                value={completedWork}
-                onChange={e => setCompletedWork(e.target.value)}
-                placeholder={lang === 'km' ? 'លទ្ធផលជាក់ស្តែង កិច្ចការ ឬកូដដែលបានបង្កើត...' : 'Specific deliverables, tasks, or code delivered...'}
-                className="w-full rounded-lg border border-slate-300 p-2 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
-              />
-            </div>
-
-            {/* Problems or Obstacles */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                {t.problemsObstacles}
-              </label>
-              <input
-                type="text"
-                value={problemsObstacles}
-                onChange={e => setProblemsObstacles(e.target.value)}
-                placeholder={lang === 'km' ? 'ឧបសគ្គ ភាពអាស្រ័យ ឬកម្រិតថវិកា (បើមាន)...' : 'Blockers, dependencies, or budget limits if any...'}
-                className="w-full rounded-lg border border-slate-300 p-2 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
-              />
-            </div>
-
-            {/* Next Actions */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                {t.nextActions}
-              </label>
-              <input
-                type="text"
-                value={nextActions}
-                onChange={e => setNextActions(e.target.value)}
-                placeholder={lang === 'km' ? 'សកម្មភាពបន្តសម្រាប់រយៈពេលរាយការណ៍បន្ទាប់...' : 'Upcoming steps for the next reporting period...'}
-                className="w-full rounded-lg border border-slate-300 p-2 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
-              />
-            </div>
-
-            {/* Actual KPI Measured */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                {t.actualKpiResult}
-              </label>
-              <input
-                type="text"
-                value={actualKpiResult}
-                onChange={e => setActualKpiResult(e.target.value)}
-                placeholder={lang === 'km' ? 'ឧ. ដំណើរការ ៩៩.៩៥% / បានត្រួតពិនិត្យ ៤២ ធាតុ...' : 'e.g. 99.95% uptime / 42 items checked...'}
-                className="w-full rounded-lg border border-slate-300 p-2 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
-              />
-            </div>
-
-            {/* Evidence File Attachment Simulation */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                {lang === 'km' ? 'ឯកសារភស្តុតាង / ឯកសារភ្ជាប់' : 'Supporting Evidence / Attachment'}
-              </label>
-              <div className="flex items-center space-x-2">
-                <input
-                  type="text"
-                  value={evidenceName}
-                  onChange={e => setEvidenceName(e.target.value)}
-                  placeholder={lang === 'km' ? 'ឈ្មោះឯកសារ (ឧ. Q1_Audit_Verification.pdf)' : 'Document name (e.g. Q1_Audit_Verification.pdf)'}
-                  className="flex-1 rounded-lg border border-slate-300 p-2 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
-                />
-                <button
-                  type="button"
-                  onClick={() => setEvidenceName('Report_Signoff_' + new Date().toISOString().split('T')[0] + '.pdf')}
-                  className="px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-xs font-medium text-slate-700 flex items-center space-x-1"
-                >
-                  <Upload className="w-3.5 h-3.5" />
-                  <span>{lang === 'km' ? 'ភ្ជាប់ឯកសារសាកល្បង' : 'Attach Demo Doc'}</span>
-                </button>
-              </div>
             </div>
           </form>
 
@@ -271,21 +250,35 @@ export const ProgressModal: React.FC<ProgressModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="p-4 border-t border-slate-200 bg-slate-50 flex items-center justify-end space-x-2 rounded-b-2xl">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 text-xs font-semibold rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100 transition"
-          >
-            {t.cancel}
-          </button>
-          <button
-            form="progress-form"
-            type="submit"
-            className="px-4 py-2 text-xs font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-700 shadow-sm transition"
-          >
-            {lang === 'km' ? 'រក្សាទុកវឌ្ឍនភាព' : `${t.save} Progress Update`}
-          </button>
+        <div className="p-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between space-x-2 rounded-b-2xl">
+          <div>
+            {newPercentage !== 100 && (
+              <button
+                type="button"
+                onClick={handleQuickComplete}
+                className="px-3 py-1.5 text-xs font-bold rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-300 transition flex items-center space-x-1"
+              >
+                <Check className="w-3.5 h-3.5 stroke-[3]" />
+                <span>{lang === 'km' ? 'បញ្ចប់ ១០០% ភ្លាមៗ' : 'Instant 100% Complete'}</span>
+              </button>
+            )}
+          </div>
+          <div className="flex items-center space-x-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-xs font-semibold rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100 transition"
+            >
+              {t.cancel}
+            </button>
+            <button
+              form="progress-form"
+              type="submit"
+              className="px-4 py-2 text-xs font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-700 shadow-xs transition flex items-center space-x-1"
+            >
+              <span>{lang === 'km' ? 'រក្សាទុកវឌ្ឍនភាព' : `${t.save} Progress`}</span>
+            </button>
+          </div>
         </div>
       </div>
     </div>

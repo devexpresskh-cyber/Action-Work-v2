@@ -344,39 +344,43 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex justify-center p-2 sm:p-4 items-start sm:items-center">
       <div 
-        className="bg-white w-full max-w-3xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[92vh] animate-in fade-in zoom-in-95 duration-200"
+        className="bg-white w-full max-w-3xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[94vh] sm:max-h-[90vh] my-auto animate-in fade-in zoom-in-95 duration-200"
         role="dialog"
         aria-modal="true"
       >
         {/* Header */}
-        <div className="bg-gradient-to-r from-blue-700 via-indigo-700 to-blue-800 text-white px-5 py-4 flex items-center justify-between relative overflow-hidden">
-          <div className="flex items-center space-x-3 z-10">
-            <div className="w-10 h-10 rounded-xl bg-white/15 backdrop-blur-md flex items-center justify-center border border-white/20 shadow-inner">
-              <Mic className={`w-5 h-5 ${isListening ? 'text-emerald-300 animate-pulse' : 'text-white'}`} />
+        <div className="bg-gradient-to-r from-blue-700 via-indigo-700 to-blue-800 text-white px-3.5 sm:px-5 py-3 sm:py-3.5 flex items-center justify-between gap-2 sm:gap-3 relative overflow-hidden shrink-0">
+          <div className="flex items-center space-x-2 sm:space-x-3 min-w-0 flex-1">
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-white/15 backdrop-blur-md flex items-center justify-center border border-white/20 shadow-inner shrink-0">
+              <Mic className={`w-4 h-4 sm:w-5 sm:h-5 ${isListening ? 'text-emerald-300 animate-pulse' : 'text-white'}`} />
             </div>
-            <div>
-              <div className="flex items-center space-x-2">
-                <h2 className="text-base sm:text-lg font-bold tracking-tight">Voice Action Plan Assistant</h2>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/20 text-emerald-200 border border-emerald-400/30 flex items-center space-x-1">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center space-x-1.5 sm:space-x-2">
+                <h2 className="text-xs sm:text-base font-bold tracking-tight truncate">
+                  {lang === 'km' ? 'ជំនួយការសំឡេងផែនការសកម្មភាព' : 'Voice Action Plan Assistant'}
+                </h2>
+                <span className="px-1.5 sm:px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-semibold bg-emerald-500/20 text-emerald-200 border border-emerald-400/30 flex items-center space-x-1 shrink-0">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
                   <span>{isListening ? 'Listening' : 'Ready'}</span>
                 </span>
               </div>
-              <p className="text-xs text-blue-100/80">
-                Voice-activated creation, updates, and management for enterprise action plans
+              <p className="text-[10px] sm:text-xs text-blue-100/80 truncate">
+                {lang === 'km' 
+                  ? 'បង្កើត កែប្រែ និងគ្រប់គ្រងផែនការសកម្មភាពតាមរយៈសំឡេង' 
+                  : 'Voice-activated creation, updates, and management for enterprise action plans'}
               </p>
             </div>
           </div>
 
-          <div className="flex items-center space-x-1.5 z-10">
+          <div className="flex items-center space-x-1 sm:space-x-1.5 shrink-0">
             {/* Language Selector (Khmer / English) */}
-            <div className="flex items-center rounded-lg bg-white/15 p-0.5 border border-white/20">
+            <div className="flex items-center rounded-lg bg-white/15 p-0.5 border border-white/20 shrink-0">
               <button
                 type="button"
                 onClick={() => handleLanguageChange('km-KH')}
-                className={`px-2 py-1 rounded-md text-xs font-bold transition flex items-center space-x-1 ${
+                className={`px-1.5 sm:px-2 py-1 rounded-md text-[11px] sm:text-xs font-bold transition whitespace-nowrap flex items-center space-x-1 ${
                   settings.recognitionLanguage === 'km-KH'
                     ? 'bg-white text-blue-900 shadow-xs'
                     : 'text-white/80 hover:text-white'
@@ -388,7 +392,7 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
               <button
                 type="button"
                 onClick={() => handleLanguageChange('en-US')}
-                className={`px-2 py-1 rounded-md text-xs font-bold transition flex items-center space-x-1 ${
+                className={`px-1.5 sm:px-2 py-1 rounded-md text-[11px] sm:text-xs font-bold transition whitespace-nowrap flex items-center space-x-1 ${
                   settings.recognitionLanguage === 'en-US'
                     ? 'bg-white text-blue-900 shadow-xs'
                     : 'text-white/80 hover:text-white'
@@ -402,29 +406,29 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
             {/* Audio Speech Output Toggle */}
             <button
               onClick={handleToggleMute}
-              className={`p-2 rounded-lg text-xs font-semibold border transition ${
+              className={`p-1.5 sm:p-2 rounded-lg text-xs font-semibold border transition shrink-0 ${
                 settings.speechOutputEnabled 
                   ? 'bg-white/15 text-white border-white/20 hover:bg-white/25' 
                   : 'bg-rose-500/30 text-rose-200 border-rose-400/40 hover:bg-rose-500/40'
               }`}
               title={settings.speechOutputEnabled ? 'Voice feedback is audible (Click to mute)' : 'Voice feedback is muted (Click to unmute)'}
             >
-              {settings.speechOutputEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+              {settings.speechOutputEnabled ? <Volume2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> : <VolumeX className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
             </button>
 
             {/* Close Button */}
             <button
               onClick={onClose}
-              className="p-2 rounded-lg text-blue-100 hover:text-white hover:bg-white/10 transition"
+              className="p-1.5 sm:p-2 rounded-lg text-blue-100 hover:text-white hover:bg-white/10 transition shrink-0"
               aria-label="Close voice assistant"
             >
-              <X className="w-5 h-5" />
+              <X className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
           </div>
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex items-center border-b border-slate-200 bg-slate-50/80 px-4 text-xs font-semibold overflow-x-auto no-scrollbar">
+        <div className="flex items-center border-b border-slate-200 bg-slate-50/80 px-3 sm:px-4 text-xs font-semibold overflow-x-auto no-scrollbar shrink-0">
           <button
             onClick={() => setActiveTab('assistant')}
             className={`px-3.5 py-2.5 border-b-2 transition flex items-center space-x-1.5 shrink-0 ${
@@ -487,7 +491,7 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
         </div>
 
         {/* Security & User Session Bar */}
-        <div className="bg-slate-100/70 px-4 py-2 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600">
+        <div className="bg-slate-100/70 px-3 sm:px-4 py-2 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600 shrink-0">
           <div className="flex items-center space-x-2">
             <span className="font-medium text-slate-700">Operator:</span>
             <span className="font-bold text-slate-900">{currentUser.name}</span>
@@ -496,7 +500,7 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
             </span>
           </div>
 
-          <div className="flex items-center space-x-3">
+          <div className="flex items-center space-x-2 sm:space-x-3">
             <button
               onClick={() => setShowPinModal(true)}
               className="flex items-center space-x-1 text-slate-600 hover:text-blue-600 font-medium transition"
@@ -883,16 +887,16 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
 
               {/* Command 1: Create a new plan */}
               <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <span className="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 font-bold text-xs">
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 font-bold text-xs whitespace-nowrap">
                       1. CREATE PLAN (បង្កើតផែនការ)
                     </span>
-                    <h4 className="text-sm font-bold text-slate-900">
-                      "Create a new plan titled [Plan Name]" / «បង្កើតផែនការថ្មីឈ្មោះ [ឈ្មោះ]»
-                    </h4>
+                    <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider shrink-0">Syntax</span>
                   </div>
-                  <span className="text-xs text-slate-400">Syntax</span>
+                  <h4 className="text-xs sm:text-sm font-bold text-slate-900 leading-snug">
+                    "Create a new plan titled [Plan Name]" / «បង្កើតផែនការថ្មីឈ្មោះ [ឈ្មោះ]»
+                  </h4>
                 </div>
                 <p className="text-xs text-slate-600">
                   Initializes a new draft action plan under the user's department with automatic plan numbering (e.g. <span className="font-mono font-semibold">AP-2026-004</span>).
@@ -927,16 +931,16 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
 
               {/* Command 2: Update the plan */}
               <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <span className="px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 font-bold text-xs">
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 font-bold text-xs whitespace-nowrap">
                       2. UPDATE PLAN (កែប្រែផែនការ)
                     </span>
-                    <h4 className="text-sm font-bold text-slate-900">
-                      "Update the [Plan Name] with [New Details]" / «កែប្រែផែនការ [ឈ្មោះ] ដោយ [ព័ត៌មានថ្មី]»
-                    </h4>
+                    <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider shrink-0">Syntax</span>
                   </div>
-                  <span className="text-xs text-slate-400">Syntax</span>
+                  <h4 className="text-xs sm:text-sm font-bold text-slate-900 leading-snug">
+                    "Update the [Plan Name] with [New Details]" / «កែប្រែផែនការ [ឈ្មោះ] ដោយ [ព័ត៌មានថ្មី]»
+                  </h4>
                 </div>
                 <p className="text-xs text-slate-600">
                   Updates an existing plan's progress percentage, review status, or appends results and progress comments.
@@ -972,16 +976,16 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
 
               {/* Command 3: Delete the plan */}
               <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <span className="px-2 py-0.5 rounded-md bg-rose-100 text-rose-800 font-bold text-xs">
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="px-2 py-0.5 rounded-md bg-rose-100 text-rose-800 font-bold text-xs whitespace-nowrap">
                       3. DELETE / ARCHIVE PLAN (លុប ឬរក្សាទុកក្នុងបណ្ណសារ)
                     </span>
-                    <h4 className="text-sm font-bold text-slate-900">
-                      "Delete the plan titled [Plan Name]" / «លុបផែនការឈ្មោះ [ឈ្មោះ]»
-                    </h4>
+                    <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider shrink-0">Syntax</span>
                   </div>
-                  <span className="text-xs text-slate-400">Syntax</span>
+                  <h4 className="text-xs sm:text-sm font-bold text-slate-900 leading-snug">
+                    "Delete the plan titled [Plan Name]" / «លុបផែនការឈ្មោះ [ឈ្មោះ]»
+                  </h4>
                 </div>
                 <p className="text-xs text-slate-600">
                   Safely archives the target plan. RBAC rules are strictly enforced: only authorized roles (Super Admin, Administrator, Department Manager, or Employee owners for their draft plans) can delete.
@@ -1000,16 +1004,16 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
 
               {/* Command 4: Query & Help */}
               <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <span className="px-2 py-0.5 rounded-md bg-purple-100 text-purple-800 font-bold text-xs">
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="px-2 py-0.5 rounded-md bg-purple-100 text-purple-800 font-bold text-xs whitespace-nowrap">
                       4. QUERY & NAVIGATION (សាកសួរ និងស្វែងរក)
                     </span>
-                    <h4 className="text-sm font-bold text-slate-900">
-                      "What is the status of [Plan Name]" / «តើស្ថានភាពផែនការ [ឈ្មោះ] យ៉ាងណាដែរ»
-                    </h4>
+                    <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider shrink-0">Syntax</span>
                   </div>
-                  <span className="text-xs text-slate-400">Syntax</span>
+                  <h4 className="text-xs sm:text-sm font-bold text-slate-900 leading-snug">
+                    "What is the status of [Plan Name]" / «តើស្ថានភាពផែនការ [ឈ្មោះ] យ៉ាងណាដែរ»
+                  </h4>
                 </div>
                 <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-1.5 text-xs">
                   <div className="font-semibold text-slate-700">Supported Khmer (ភាសាខ្មែរ) Variations:</div>
@@ -1025,16 +1029,16 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
 
               {/* Command 5: Create Activity / Task */}
               <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <span className="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 font-bold text-xs">
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 font-bold text-xs whitespace-nowrap">
                       5. CREATE ACTIVITY / TASK (បង្កើតសកម្មភាព ឬកិច្ចការ)
                     </span>
-                    <h4 className="text-sm font-bold text-slate-900">
-                      "Create task [Task Name] in plan [Plan]" / «បង្កើតសកម្មភាពថ្មីឈ្មោះ [ឈ្មោះ] ក្នុងផែនការ [ផែនការ]»
-                    </h4>
+                    <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider shrink-0">Syntax</span>
                   </div>
-                  <span className="text-xs text-slate-400">Syntax</span>
+                  <h4 className="text-xs sm:text-sm font-bold text-slate-900 leading-snug">
+                    "Create task [Task Name] in plan [Plan]" / «បង្កើតសកម្មភាពថ្មីឈ្មោះ [ឈ្មោះ] ក្នុងផែនការ [ផែនការ]»
+                  </h4>
                 </div>
                 <p className="text-xs text-slate-600">
                   Creates an activity or sub-task directly linked to an action plan. Automatically extracts assignees, priority (Low, Medium, High, Urgent), start date, and due date.
@@ -1053,16 +1057,16 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
 
               {/* Command 6: Update / Complete Activity */}
               <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <span className="px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 font-bold text-xs">
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 font-bold text-xs whitespace-nowrap">
                       6. UPDATE & COMPLETE ACTIVITY (កែប្រែ ឬបញ្ចប់កិច្ចការ)
                     </span>
-                    <h4 className="text-sm font-bold text-slate-900">
-                      "Mark activity [Code] as completed" / «សម្គាល់សកម្មភាព [កូដ] ថាបានបញ្ចប់»
-                    </h4>
+                    <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider shrink-0">Syntax</span>
                   </div>
-                  <span className="text-xs text-slate-400">Syntax</span>
+                  <h4 className="text-xs sm:text-sm font-bold text-slate-900 leading-snug">
+                    "Mark activity [Code] as completed" / «សម្គាល់សកម្មភាព [កូដ] ថាបានបញ្ចប់»
+                  </h4>
                 </div>
                 <p className="text-xs text-slate-600">
                   Updates progress percentage, changes status, assigns staff members, or marks as complete. Automatically validates prerequisite dependency constraints before completion.
@@ -1081,16 +1085,16 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
 
               {/* Command 7: Delete Activity */}
               <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <span className="px-2 py-0.5 rounded-md bg-rose-100 text-rose-800 font-bold text-xs">
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="px-2 py-0.5 rounded-md bg-rose-100 text-rose-800 font-bold text-xs whitespace-nowrap">
                       7. DELETE ACTIVITY / TASK (លុបសកម្មភាព ឬកិច្ចការ)
                     </span>
-                    <h4 className="text-sm font-bold text-slate-900">
-                      "Delete activity [Code]" / «លុបសកម្មភាព [កូដ]»
-                    </h4>
+                    <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider shrink-0">Syntax</span>
                   </div>
-                  <span className="text-xs text-slate-400">Syntax</span>
+                  <h4 className="text-xs sm:text-sm font-bold text-slate-900 leading-snug">
+                    "Delete activity [Code]" / «លុបសកម្មភាព [កូដ]»
+                  </h4>
                 </div>
                 <p className="text-xs text-slate-600">
                   Removes an activity after verifying user permissions (super admin, admin, department manager, or creator) and confirming no blocking dependencies rely on it.
@@ -1446,7 +1450,7 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="bg-slate-50 px-5 py-3 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs">
+        <div className="bg-slate-50 px-4 sm:px-5 py-3 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2.5 sm:gap-3 text-xs shrink-0">
           <div className="flex items-center space-x-2 text-slate-500">
             <span className="w-2 h-2 rounded-full bg-emerald-500" />
             <span>Voice engine connected • Web Speech Recognition & Synthesis</span>

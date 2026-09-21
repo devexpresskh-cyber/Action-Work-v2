@@ -29,7 +29,9 @@ import {
   UserCheck,
   FolderKanban,
   Trash2,
-  Edit3
+  Edit3,
+  Check,
+  CheckCircle
 } from 'lucide-react';
 import { User, Language, ActionPlan, Activity, AttendanceRecord } from '../types';
 import { translations } from '../services/i18n';
@@ -174,6 +176,58 @@ export const EmployeeHubView: React.FC<EmployeeHubViewProps> = ({
     db.updateActivityProgress(activityId, newProgress, `Updated to ${newProgress}% via Quick Mobile Hub`);
     setRefreshKey(k => k + 1);
     showToast(`Task progress updated to ${newProgress}%`);
+  };
+
+  // Instant task completion toggle with dependency check
+  const handleToggleTaskComplete = (task: Activity) => {
+    if (task.status !== 'Completed' && task.progressPercentage < 100) {
+      const validation = db.validateDependencies(task.id);
+      if (!validation.canComplete) {
+        showToast(
+          lang === 'km'
+            ? `មិនអាចបញ្ចប់កិច្ចការបានទេ។ សូមបញ្ចប់កិច្ចការជាមុនសិន៖ ${validation.blockingActivities.map(b => b.code).join(', ')}`
+            : `Cannot complete yet. Prerequisites pending: ${validation.blockingActivities.map(b => b.code).join(', ')}`
+        );
+        return;
+      }
+      db.saveActivity({
+        ...task,
+        status: 'Completed',
+        progressPercentage: 100,
+        completionDate: new Date().toISOString().split('T')[0],
+      });
+      db.addProgressUpdate({
+        entityType: 'activity',
+        entityId: task.id,
+        previousPercentage: task.progressPercentage,
+        newPercentage: 100,
+        description: lang === 'km' ? 'បានបញ្ចប់កិច្ចការតាមរយៈបញ្ជីរហ័ស' : 'Completed task via quick 1-click checkbox',
+      });
+      setRefreshKey(k => k + 1);
+      showToast(lang === 'km' ? `កិច្ចការ ${task.code} បានបញ្ចប់ ១០០%!` : `Task ${task.code} completed 100%!`);
+    } else {
+      // Revert to in progress
+      db.saveActivity({
+        ...task,
+        status: 'In Progress',
+        progressPercentage: 50,
+      });
+      setRefreshKey(k => k + 1);
+      showToast(lang === 'km' ? `កិច្ចការ ${task.code} បានបើកដំណើរការឡើងវិញ` : `Task ${task.code} reverted to In Progress`);
+    }
+  };
+
+  // Instant action plan completion for owned plans
+  const handleQuickCompletePlan = (planId: string) => {
+    const updated = db.updatePlanProgress(
+      planId, 
+      100, 
+      lang === 'km' ? 'បានបញ្ចប់ផែនការសកម្មភាព' : 'Completed action plan via quick employee action'
+    );
+    if (updated) {
+      setRefreshKey(k => k + 1);
+      showToast(lang === 'km' ? `ផែនការ ${updated.planNumber} បានបញ្ចប់ ១០០%!` : `Action plan ${updated.planNumber} marked 100% complete!`);
+    }
   };
 
   return (
@@ -481,23 +535,44 @@ export const EmployeeHubView: React.FC<EmployeeHubViewProps> = ({
                 <div key={task.id} className="p-4 transition hover:bg-slate-50/60">
                   <div 
                     onClick={() => setExpandedTaskId(isExpanded ? null : task.id)}
-                    className="flex items-start justify-between cursor-pointer select-none"
+                    className="flex items-start justify-between cursor-pointer select-none gap-3"
                   >
-                    <div className="min-w-0 pr-3">
-                      <div className="flex items-center space-x-2">
-                        <span className="font-mono text-[11px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md">
-                          {task.code}
-                        </span>
-                        <h4 className="text-xs sm:text-sm font-bold text-slate-900 truncate">
-                          {task.title}
-                        </h4>
-                      </div>
-                      <div className="flex items-center space-x-3 text-xs text-slate-500 mt-1">
-                        <span>Due: <strong className="text-slate-700">{task.dueDate}</strong></span>
-                        <span>•</span>
-                        <span>Weight: <strong className="text-slate-700">{task.weight}%</strong></span>
-                        <span>•</span>
-                        <span>Status: <strong className="text-blue-600">{task.status}</strong></span>
+                    <div className="flex items-start space-x-3 min-w-0 pr-2">
+                      {/* 1-Click Task Complete Checkbox */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleToggleTaskComplete(task);
+                        }}
+                        className={`w-6 h-6 rounded-lg border flex items-center justify-center transition shrink-0 mt-0.5 ${
+                          task.status === 'Completed' || task.progressPercentage === 100
+                            ? 'bg-emerald-600 border-emerald-600 text-white shadow-xs'
+                            : 'border-slate-300 hover:border-emerald-500 bg-white hover:bg-emerald-50 text-transparent hover:text-emerald-500'
+                        }`}
+                        title={task.status === 'Completed' ? 'Mark In Progress' : 'Quick Complete (100%)'}
+                      >
+                        <Check className="w-3.5 h-3.5 stroke-[3]" />
+                      </button>
+
+                      <div className="min-w-0">
+                        <div className="flex items-center space-x-2">
+                          <span className="font-mono text-[11px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md">
+                            {task.code}
+                          </span>
+                          <h4 className={`text-xs sm:text-sm font-bold truncate ${
+                            task.status === 'Completed' ? 'line-through text-slate-400' : 'text-slate-900'
+                          }`}>
+                            {task.title}
+                          </h4>
+                        </div>
+                        <div className="flex items-center space-x-3 text-xs text-slate-500 mt-1">
+                          <span>Due: <strong className="text-slate-700">{task.dueDate}</strong></span>
+                          <span>•</span>
+                          <span>Weight: <strong className="text-slate-700">{task.weight}%</strong></span>
+                          <span>•</span>
+                          <span>Status: <strong className={task.status === 'Completed' ? 'text-emerald-600 font-semibold' : 'text-blue-600'}>{task.status}</strong></span>
+                        </div>
                       </div>
                     </div>
 
@@ -708,14 +783,32 @@ export const EmployeeHubView: React.FC<EmployeeHubViewProps> = ({
                     </div>
 
                     {/* Actions */}
-                    <div className="flex items-center justify-between mt-3 pt-2 border-t border-slate-100">
-                      <button
-                        onClick={() => onNavigatePlan(plan.id)}
-                        className="text-xs font-bold text-blue-600 hover:text-blue-800 flex items-center space-x-1"
-                      >
-                        <span>{lang === 'km' ? 'បើក និងគ្រប់គ្រង' : 'Open & Manage'}</span>
-                        <ExternalLink className="w-3 h-3" />
-                      </button>
+                    <div className="flex items-center justify-between mt-3 pt-2 border-t border-slate-100 gap-2">
+                      <div className="flex items-center space-x-2">
+                        {plan.status !== 'Completed' ? (
+                          <button
+                            type="button"
+                            onClick={() => handleQuickCompletePlan(plan.id)}
+                            className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-bold border border-emerald-200 transition"
+                            title={lang === 'km' ? 'សម្គាល់ថាបានបញ្ចប់ ១០០%' : 'Quick complete action plan in 1 click'}
+                          >
+                            <Check className="w-3.5 h-3.5 stroke-[3]" />
+                            <span>{lang === 'km' ? 'បញ្ចប់ ១០០%' : 'Quick Complete'}</span>
+                          </button>
+                        ) : (
+                          <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-100 text-emerald-800">
+                            <Check className="w-3 h-3 stroke-[3]" />
+                            <span>{lang === 'km' ? 'បានបញ្ចប់' : 'Completed'}</span>
+                          </span>
+                        )}
+                        <button
+                          onClick={() => onNavigatePlan(plan.id)}
+                          className="text-xs font-bold text-blue-600 hover:text-blue-800 flex items-center space-x-1"
+                        >
+                          <span>{lang === 'km' ? 'បើក និងគ្រប់គ្រង' : 'Open'}</span>
+                          <ExternalLink className="w-3 h-3" />
+                        </button>
+                      </div>
                       <button
                         onClick={e => handleDeleteOwnedPlan(plan, e)}
                         className="p-1 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition"

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Clock, Calendar, User, MapPin, FileText, CheckCircle2, Sun, Moon } from 'lucide-react';
+import { X, Clock, Calendar, User, MapPin, FileText, CheckCircle2, Sun, Moon, ShieldCheck, WifiOff } from 'lucide-react';
 import { User as UserType, Department, AttendanceRecord, AttendanceStatus, Language, ShiftType } from '../types';
 import { translations } from '../services/i18n';
 import { WORK_SHIFTS } from '../services/db';
@@ -35,9 +35,11 @@ export const ManualAttendanceModal: React.FC<ManualAttendanceModalProps> = ({
   const [status, setStatus] = useState<AttendanceStatus>('Present');
   const [workingHours, setWorkingHours] = useState(8.0);
   const [overtimeHours, setOvertimeHours] = useState(0);
-  const [location, setLocation] = useState('Phnom Penh HQ - Main Tower');
+  const [location, setLocation] = useState('Anonymized Campus Zone (Zero-Tracking)');
   const [notes, setNotes] = useState('');
-  const [checkInMethod, setCheckInMethod] = useState<'Web Portal' | 'Biometric Sync' | 'QR Code' | 'Manual Adjustment'>('Manual Adjustment');
+  const [checkInMethod, setCheckInMethod] = useState<'Web Portal' | 'Biometric Sync' | 'QR Code' | 'Manual Adjustment' | 'Manual Self-Attestation (Zero-Tracking)'>('Manual Self-Attestation (Zero-Tracking)');
+  const [zeroTrackingMode, setZeroTrackingMode] = useState(true);
+  const [vpnMasked, setVpnMasked] = useState(true);
 
   if (!isOpen) return null;
 
@@ -59,6 +61,14 @@ export const ManualAttendanceModal: React.FC<ManualAttendanceModalProps> = ({
 
     const shiftConfig = WORK_SHIFTS[shiftType];
 
+    const finalLocation = zeroTrackingMode 
+      ? (location.includes('HQ') ? 'Anonymized Campus Zone (Zero-Tracking)' : 'Anonymized Worksite Zone (Zero-Tracking)')
+      : location;
+
+    const finalIp = vpnMasked 
+      ? `10.8.0.${Math.floor(10 + Math.random() * 80)} [VPN Tunnel Masked]`
+      : '192.168.xxx.xxx [Protected]';
+
     onSave({
       userId,
       userName: selectedUser.name,
@@ -73,10 +83,15 @@ export const ManualAttendanceModal: React.FC<ManualAttendanceModalProps> = ({
       workingHours: status === 'Absent' || status === 'On Leave' ? 0 : Number(workingHours),
       overtimeHours: status === 'Absent' || status === 'On Leave' ? 0 : Number(overtimeHours),
       notes: notes || `Manual attendance recorded by ${currentUser.name} (${shiftConfig.name})`,
-      location,
-      ipAddress: '192.168.1.1',
+      location: finalLocation,
+      ipAddress: finalIp,
       checkInMethod,
       verifiedBy: currentUser.id,
+      isAnonymized: zeroTrackingMode,
+      locationAnonymized: zeroTrackingMode,
+      vpnProtected: vpnMasked,
+      zeroSignalVerified: zeroTrackingMode,
+      privacyMode: zeroTrackingMode ? 'Zero-Tracking' : (vpnMasked ? 'VPN-Masked' : 'Standard'),
     });
     onClose();
   };
@@ -322,12 +337,65 @@ export const ManualAttendanceModal: React.FC<ManualAttendanceModalProps> = ({
                 onChange={e => setCheckInMethod(e.target.value as any)}
                 className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500 bg-white"
               >
+                <option value="Manual Self-Attestation (Zero-Tracking)">{lang === 'km' ? 'កត់ត្រាវត្តមានដោយដៃ (Zero-Tracking)' : 'Manual Self-Attestation (Zero-Tracking)'}</option>
                 <option value="Manual Adjustment">{lang === 'km' ? 'ការកែសម្រួលដោយដៃ (អ្នកគ្រប់គ្រង)' : 'Manual Adjustment (Admin)'}</option>
                 <option value="Biometric Sync">{lang === 'km' ? 'ឧបករណ៍ស្កេនមេដៃ (Biometric Sync)' : 'Biometric Device Sync'}</option>
                 <option value="QR Code">{lang === 'km' ? 'ម៉ាស៊ីនស្កេន QR សន្តិសុខ' : 'Security Desk QR Scanner'}</option>
                 <option value="Web Portal">{lang === 'km' ? 'វិបផតថលបុគ្គលិក' : 'Employee Web Portal'}</option>
               </select>
             </div>
+          </div>
+
+          {/* Privacy & Anti-Tracking Shield Controls */}
+          <div className="p-3 bg-emerald-50/70 border border-emerald-200/80 rounded-lg space-y-2.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span className="text-xs font-semibold text-emerald-950">
+                  {lang === 'km' ? 'ខែលការពារឯកជនភាព និងការតាមដានទីតាំង' : 'Privacy & Zero-Tracking Protection Shield'}
+                </span>
+              </div>
+              <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                {lang === 'km' ? 'គ្មាន GPS / គ្មាន Wi-Fi Probe' : 'Zero Telemetry'}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+              <label className="flex items-center space-x-2 text-slate-700 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={zeroTrackingMode}
+                  onChange={e => {
+                    setZeroTrackingMode(e.target.checked);
+                    if (e.target.checked) {
+                      setLocation('Anonymized Campus Zone (Zero-Tracking)');
+                    }
+                  }}
+                  className="rounded text-emerald-600 focus:ring-emerald-500 w-3.5 h-3.5"
+                />
+                <span className="text-[11px] text-slate-800">
+                  {lang === 'km' ? 'បំប្លែងទីតាំងជាតំបន់អនាមិក' : 'Anonymize Location String'}
+                </span>
+              </label>
+
+              <label className="flex items-center space-x-2 text-slate-700 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={vpnMasked}
+                  onChange={e => setVpnMasked(e.target.checked)}
+                  className="rounded text-emerald-600 focus:ring-emerald-500 w-3.5 h-3.5"
+                />
+                <span className="text-[11px] text-slate-800">
+                  {lang === 'km' ? 'បិទបាំង IP តាមរយៈ VPN Subnet' : 'Mask IP via VPN Subnet'}
+                </span>
+              </label>
+            </div>
+
+            <p className="text-[11px] text-emerald-800/90 leading-relaxed">
+              {lang === 'km'
+                ? 'ប្រព័ន្ធត្រូវបានធានាថាមិនទាមទារសិទ្ធិទីតាំង Geolocation ឬស្កេន Wi-Fi BSSID ឡើយ។'
+                : 'Guaranteed: Zero GPS geolocation polling or Wi-Fi beacon probes are transmitted or stored.'}
+            </p>
           </div>
 
           <div>

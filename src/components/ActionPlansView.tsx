@@ -25,7 +25,8 @@ import {
   Paperclip,
   Mic,
   Sparkles,
-  UserCheck
+  UserCheck,
+  Check
 } from 'lucide-react';
 import { ActionPlan, Language, User, PriorityLevel, PlanStatus, Department, Objective } from '../types';
 import { translations } from '../services/i18n';
@@ -196,6 +197,35 @@ export const ActionPlansView: React.FC<ActionPlansViewProps> = ({
       refreshPlans();
     } catch (err: any) {
       setFormError(err.message || (lang === 'km' ? 'បរាជ័យក្នុងការរក្សាទុកផែនការសកម្មភាព។' : 'Failed to save action plan.'));
+    }
+  };
+
+  const handleQuickCompletePlan = (planId: string) => {
+    try {
+      const updated = db.updatePlanProgress(
+        planId, 
+        100, 
+        lang === 'km' ? 'បានបញ្ចប់ផែនការសកម្មភាព' : 'Completed action plan via 1-click quick action'
+      );
+      if (updated) {
+        refreshPlans();
+        if (inspectingPlan?.id === planId) {
+          setInspectingPlan(updated);
+        }
+        setFeedbackNotice({
+          type: 'success',
+          message: lang === 'km' 
+            ? `ផែនការ ${updated.planNumber} បានបញ្ចប់ ១០០% ដោយជោគជ័យ!` 
+            : `Plan ${updated.planNumber} marked 100% completed!`
+        });
+        setTimeout(() => setFeedbackNotice(null), 4000);
+      }
+    } catch (err: any) {
+      setFeedbackNotice({
+        type: 'error',
+        message: err.message || (lang === 'km' ? 'មិនអាចបញ្ចប់ផែនការបានទេ។' : 'Failed to complete plan.')
+      });
+      setTimeout(() => setFeedbackNotice(null), 4000);
     }
   };
 
@@ -594,6 +624,17 @@ export const ActionPlansView: React.FC<ActionPlansViewProps> = ({
                           >
                             <Eye className="w-4 h-4" />
                           </button>
+
+                          {/* Quick Complete 1-Click */}
+                          {canEdit && plan.status !== 'Completed' && (
+                            <button
+                              onClick={() => handleQuickCompletePlan(plan.id)}
+                              className="p-1.5 rounded-md text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
+                              title={lang === 'km' ? 'បញ្ចប់ ១០០% ភ្លាមៗ (១ ចុច)' : '1-Click Complete (100%)'}
+                            >
+                              <Check className="w-4 h-4 stroke-[3]" />
+                            </button>
+                          )}
 
                           {/* Update Progress */}
                           <button
@@ -1137,11 +1178,20 @@ export const ActionPlansView: React.FC<ActionPlansViewProps> = ({
             {/* Footer */}
             <div className="p-4 border-t border-slate-200 bg-slate-50 flex flex-wrap items-center justify-between gap-2 rounded-b-2xl">
               <div className="flex flex-wrap items-center gap-2">
+                {inspectingPlan.status !== 'Completed' && (
+                  <button
+                    onClick={() => handleQuickCompletePlan(inspectingPlan.id)}
+                    className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition flex items-center space-x-1"
+                  >
+                    <Check className="w-3.5 h-3.5 stroke-[3]" />
+                    <span>{lang === 'km' ? 'បញ្ចប់ ១០០% ភ្លាមៗ' : '1-Click Complete (100%)'}</span>
+                  </button>
+                )}
                 <button
                   onClick={() => {
                     setProgressPlan(inspectingPlan);
                   }}
-                  className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs transition"
+                  className="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-800 text-white font-semibold text-xs transition"
                 >
                   {lang === 'km' ? 'កត់ត្រាវឌ្ឍនភាព' : 'Update Progress'}
                 </button>

@@ -1,6 +1,6 @@
 {
   "name": "Remix Remix Remix Action Plan Management System",
-  "description": "Enterprise Action Plan Management System with departmental objectives, activities, progress tracking, multi-tier approvals, Gantt charts, and reports.",
+  "description": "Enterprise Action Plan Management System with departmental objectives, activities, multi-tier approvals, zero-tracking attendance with workplace Wi-Fi/IP whitelisting, and automated dossiers.",
   "requestFramePermissions": [
     "microphone"
   ],

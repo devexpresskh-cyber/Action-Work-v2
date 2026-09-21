@@ -29,6 +29,10 @@ import {
   Moon,
   Pencil,
   Sliders,
+  Wifi,
+  WifiOff,
+  Lock,
+  EyeOff,
 } from 'lucide-react';
 import {
   User as UserType,
@@ -44,6 +48,7 @@ import { ManualAttendanceModal } from './ManualAttendanceModal';
 import { AttendanceDossierModal } from './AttendanceDossierModal';
 import { EditAttendanceShiftModal } from './EditAttendanceShiftModal';
 import { ShiftSchedulesModal } from './ShiftSchedulesModal';
+import { NetworkWhitelistView } from './NetworkWhitelistView';
 import { exportToCSV, exportToExcel } from '../services/exportUtils';
 
 interface AttendanceViewProps {
@@ -58,9 +63,21 @@ export const AttendanceView: React.FC<AttendanceViewProps> = ({
   onNavigateTab,
 }) => {
   const t = translations[lang];
+  const isSuperOrAdmin = currentUser.role === 'Super Admin' || currentUser.role === 'Admin';
 
-  // Active view tab: 'daily' | 'monthly-reports' | 'my-history'
-  const [activeTab, setActiveTab] = useState<'daily' | 'monthly-reports' | 'my-history'>('daily');
+  // Active view tab: 'daily' | 'monthly-reports' | 'my-history' | 'network-whitelist'
+  const [activeTab, setActiveTab] = useState<'daily' | 'monthly-reports' | 'my-history' | 'network-whitelist'>('daily');
+
+  // Workplace Network Connection & Settings
+  const [currentConnection, setCurrentConnection] = useState(() => db.getCurrentNetworkConnection());
+  const [networkSettings, setNetworkSettings] = useState(() => db.getNetworkSettings());
+
+  // Auto-revert if non-admin somehow has network-whitelist active
+  useEffect(() => {
+    if (activeTab === 'network-whitelist' && !isSuperOrAdmin) {
+      setActiveTab('daily');
+    }
+  }, [activeTab, isSuperOrAdmin]);
 
   // Real-time clock for display
   const [currentTime, setCurrentTime] = useState<string>('');
@@ -131,11 +148,25 @@ export const AttendanceView: React.FC<AttendanceViewProps> = ({
     setRecords(db.getAttendanceRecords());
     setTodayRecord(db.getTodayAttendance(currentUser.id));
     setMonthlyReports(db.getMonthlyReports());
+    setCurrentConnection(db.getCurrentNetworkConnection());
+    setNetworkSettings(db.getNetworkSettings());
   };
 
   // Handle Quick Check-In
   const handleCheckIn = () => {
-    const res = db.checkIn(currentUser.id, checkInNotes, checkInLocation, checkInShift);
+    const res = db.checkIn(
+      currentUser.id,
+      checkInNotes,
+      checkInLocation,
+      checkInShift,
+      undefined,
+      {
+        clientIp: currentConnection.clientIp,
+        networkId: currentConnection.networkId,
+        ssid: currentConnection.ssid,
+        forceSeamless: currentConnection.isWhitelisted && networkSettings.seamlessCheckInEnabled,
+      }
+    );
     refreshData();
     setShowCheckInForm(false);
     setCheckInNotes('');
@@ -345,6 +376,11 @@ export const AttendanceView: React.FC<AttendanceViewProps> = ({
                   ) : todayRecord?.checkInTime ? (
                     <span className="text-emerald-700 font-medium">
                       {lang === 'km' ? 'បានកត់ត្រាចូលនៅ' : 'Clocked in at'} <span className="font-bold">{todayRecord.checkInTime}</span> ({todayRecord.status}) &bull; {todayRecord.workShift} &bull; {todayRecord.location || 'Office HQ'}
+                      {todayRecord.networkWhitelisted && (
+                        <span className="ml-1.5 px-1.5 py-0.2 rounded bg-teal-100 text-teal-800 text-[10px] font-bold">
+                          Wi-Fi Verified
+                        </span>
+                      )}
                     </span>
                   ) : (
                     <span className="text-amber-700 font-medium">
@@ -354,6 +390,34 @@ export const AttendanceView: React.FC<AttendanceViewProps> = ({
                     </span>
                   )}
                 </p>
+
+                {/* Workplace Network Presence Chip */}
+                <div className="flex flex-wrap items-center gap-2 mt-2 text-xs">
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-medium">
+                    <Wifi className="w-3.5 h-3.5 text-teal-600" />
+                    <span className="font-mono text-[11px] font-semibold">{currentConnection.ssid}</span>
+                    <span className="text-slate-400 font-mono text-[10px]">({currentConnection.clientIp})</span>
+                  </span>
+
+                  <span
+                    className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                      currentConnection.isWhitelisted
+                        ? 'bg-teal-100 dark:bg-teal-950 text-teal-800 dark:text-teal-300'
+                        : 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300'
+                    }`}
+                  >
+                    {currentConnection.isWhitelisted
+                      ? lang === 'km' ? 'Wi-Fi អនុញ្ញាត (Seamless)' : 'Whitelisted (Seamless)'
+                      : lang === 'km' ? 'បណ្តាញក្រៅ' : 'External / Remote'}
+                  </span>
+
+                  {currentConnection.isWhitelisted && networkSettings.seamlessCheckInEnabled && (
+                    <span className="text-[11px] text-emerald-700 font-semibold flex items-center gap-1">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>{lang === 'km' ? 'កត់ត្រារហ័ស ១-Tap សកម្ម' : '1-Tap Seamless Ready'}</span>
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -370,66 +434,91 @@ export const AttendanceView: React.FC<AttendanceViewProps> = ({
                       <span>{t.checkInNow || 'Clock In Now'}</span>
                     </button>
                   ) : (
-                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 bg-white p-2.5 rounded-xl border border-slate-200 shadow-sm w-full sm:w-auto">
-                      {/* 2-Shift Toggle Buttons */}
-                      <div className="flex items-center bg-slate-100 p-0.5 rounded-lg">
-                        <button
-                          type="button"
-                          onClick={() => setCheckInShift('Morning')}
-                          className={`flex items-center space-x-1 px-2.5 py-1.5 rounded-md text-xs font-semibold transition ${
-                            checkInShift === 'Morning'
-                              ? 'bg-white text-amber-800 shadow-xs ring-1 ring-amber-400/50'
-                              : 'text-slate-600 hover:text-slate-900'
-                          }`}
+                    <div className="flex flex-col gap-2 bg-white p-3 rounded-xl border border-emerald-200 shadow-sm w-full sm:w-auto">
+                      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                        {/* 2-Shift Toggle Buttons */}
+                        <div className="flex items-center bg-slate-100 p-0.5 rounded-lg">
+                          <button
+                            type="button"
+                            onClick={() => setCheckInShift('Morning')}
+                            className={`flex items-center space-x-1 px-2.5 py-1.5 rounded-md text-xs font-semibold transition ${
+                              checkInShift === 'Morning'
+                                ? 'bg-white text-amber-800 shadow-xs ring-1 ring-amber-400/50'
+                                : 'text-slate-600 hover:text-slate-900'
+                            }`}
+                          >
+                            <Sun className="w-3 h-3 text-amber-500" />
+                            <span>{t.morningShiftShort || 'Morning'}</span>
+                            <span className="text-[10px] text-slate-400 font-normal ml-0.5">(08:00)</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setCheckInShift('Evening')}
+                            className={`flex items-center space-x-1 px-2.5 py-1.5 rounded-md text-xs font-semibold transition ${
+                              checkInShift === 'Evening'
+                                ? 'bg-white text-indigo-800 shadow-xs ring-1 ring-indigo-400/50'
+                                : 'text-slate-600 hover:text-slate-900'
+                            }`}
+                          >
+                            <Moon className="w-3 h-3 text-indigo-500" />
+                            <span>{t.eveningShiftShort || 'Evening'}</span>
+                            <span className="text-[10px] text-slate-400 font-normal ml-0.5">(14:00)</span>
+                          </button>
+                        </div>
+
+                        <input
+                          type="text"
+                          placeholder={lang === 'km' ? 'កំណត់ចំណាំ (ជាជម្រើស)...' : 'Notes (optional)...'}
+                          value={checkInNotes}
+                          onChange={e => setCheckInNotes(e.target.value)}
+                          className="text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:ring-1 focus:ring-blue-500 w-36"
+                        />
+                        <select
+                          value={checkInLocation}
+                          onChange={e => setCheckInLocation(e.target.value)}
+                          className="text-xs px-2 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden bg-white"
                         >
-                          <Sun className="w-3 h-3 text-amber-500" />
-                          <span>{t.morningShiftShort || 'Morning'}</span>
-                          <span className="text-[10px] text-slate-400 font-normal ml-0.5">(08:00)</span>
+                          <option value="Phnom Penh HQ - Main Tower">{lang === 'km' ? 'ការិយាល័យកណ្តាល (HQ)' : 'HQ Tower'}</option>
+                          <option value="HQ Data Center - Room 102">{lang === 'km' ? 'មជ្ឈមណ្ឌលទិន្នន័យ (DC)' : 'Data Center'}</option>
+                          <option value="Tech Wing - Engineering Desk">{lang === 'km' ? 'ផ្នែកបច្ចេកវិទ្យា' : 'Tech Wing'}</option>
+                          <option value="Remote / Client Field Site">{lang === 'km' ? 'ពីចម្ងាយ / ការដ្ឋាន' : 'Remote / Field'}</option>
+                        </select>
+                        <button
+                          onClick={handleCheckIn}
+                          className="px-3.5 py-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-xs flex items-center space-x-1"
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>{lang === 'km' ? 'បញ្ជាក់ចូល' : 'Confirm Clock In'}</span>
                         </button>
                         <button
-                          type="button"
-                          onClick={() => setCheckInShift('Evening')}
-                          className={`flex items-center space-x-1 px-2.5 py-1.5 rounded-md text-xs font-semibold transition ${
-                            checkInShift === 'Evening'
-                              ? 'bg-white text-indigo-800 shadow-xs ring-1 ring-indigo-400/50'
-                              : 'text-slate-600 hover:text-slate-900'
-                          }`}
+                          onClick={() => setShowCheckInForm(false)}
+                          className="px-2 py-1.5 text-xs text-slate-500 hover:text-slate-800"
                         >
-                          <Moon className="w-3 h-3 text-indigo-500" />
-                          <span>{t.eveningShiftShort || 'Evening'}</span>
-                          <span className="text-[10px] text-slate-400 font-normal ml-0.5">(14:00)</span>
+                          {lang === 'km' ? 'បោះបង់' : 'Cancel'}
                         </button>
                       </div>
 
-                      <input
-                        type="text"
-                        placeholder={lang === 'km' ? 'កំណត់ចំណាំ (ជាជម្រើស)...' : 'Notes (optional)...'}
-                        value={checkInNotes}
-                        onChange={e => setCheckInNotes(e.target.value)}
-                        className="text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:ring-1 focus:ring-blue-500 w-36"
-                      />
-                      <select
-                        value={checkInLocation}
-                        onChange={e => setCheckInLocation(e.target.value)}
-                        className="text-xs px-2 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden bg-white"
-                      >
-                        <option value="Phnom Penh HQ - Main Tower">{lang === 'km' ? 'ការិយាល័យកណ្តាល (HQ)' : 'HQ Tower'}</option>
-                        <option value="HQ Data Center - Room 102">{lang === 'km' ? 'មជ្ឈមណ្ឌលទិន្នន័យ (DC)' : 'Data Center'}</option>
-                        <option value="Tech Wing - Engineering Desk">{lang === 'km' ? 'ផ្នែកបច្ចេកវិទ្យា' : 'Tech Wing'}</option>
-                        <option value="Remote / Client Field Site">{lang === 'km' ? 'ពីចម្ងាយ / ការដ្ឋាន' : 'Remote / Field'}</option>
-                      </select>
-                      <button
-                        onClick={handleCheckIn}
-                        className="px-3.5 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-xs"
-                      >
-                        {lang === 'km' ? 'បញ្ជាក់' : 'Confirm'}
-                      </button>
-                      <button
-                        onClick={() => setShowCheckInForm(false)}
-                        className="px-2 py-1.5 text-xs text-slate-500 hover:text-slate-800"
-                      >
-                        {lang === 'km' ? 'បោះបង់' : 'Cancel'}
-                      </button>
+                      {/* Workplace Internet Connection Status */}
+                      <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100 text-[11px]">
+                        <div className="flex items-center space-x-2 text-slate-600 dark:text-slate-400">
+                          <Wifi className="w-3.5 h-3.5 text-teal-600" />
+                          <span>
+                            {lang === 'km' ? 'បណ្តាញភ្ជាប់:' : 'Connected Network:'}{' '}
+                            <strong className="text-slate-800 dark:text-slate-200">{currentConnection.ssid}</strong> ({currentConnection.clientIp})
+                          </span>
+                        </div>
+                        <span
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                            currentConnection.isWhitelisted
+                              ? 'bg-teal-100 dark:bg-teal-950 text-teal-800 dark:text-teal-300'
+                              : 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300'
+                          }`}
+                        >
+                          {currentConnection.isWhitelisted
+                            ? (lang === 'km' ? 'បណ្តាញអនុញ្ញាត' : 'Admin Approved Internet')
+                            : (lang === 'km' ? 'បណ្តាញក្រៅ' : 'External Internet')}
+                        </span>
+                      </div>
                     </div>
                   )}
                 </>
@@ -589,6 +678,25 @@ export const AttendanceView: React.FC<AttendanceViewProps> = ({
             <History className="w-4 h-4" />
             <span>{lang === 'km' ? 'កំណត់ត្រាវត្តមានរបស់ខ្ញុំ' : 'My Attendance Log'}</span>
           </button>
+
+          {/* Only Admin can manage Internet to accept checkin and checkout */}
+          {isSuperOrAdmin && (
+            <button
+              id="tab-btn-network-whitelist-main"
+              onClick={() => setActiveTab('network-whitelist')}
+              className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-xs font-semibold transition ${
+                activeTab === 'network-whitelist'
+                  ? 'bg-teal-600 text-white shadow-xs'
+                  : 'text-teal-800 bg-teal-50 hover:bg-teal-100 hover:text-teal-900 border border-teal-200/80'
+              }`}
+            >
+              <Wifi className="w-4 h-4 text-teal-600" />
+              <span>{lang === 'km' ? 'គ្រប់គ្រងបណ្តាញ Internet (Admin)' : 'Manage Internet (Admin)'}</span>
+              <span className="px-1.5 py-0.2 bg-teal-200 text-teal-900 rounded-full text-[10px] font-bold">
+                {currentConnection.isWhitelisted ? 'Whitelisted' : 'External'}
+              </span>
+            </button>
+          )}
         </div>
 
         {/* Action buttons */}
@@ -809,12 +917,30 @@ export const AttendanceView: React.FC<AttendanceViewProps> = ({
                             </span>
                           </td>
                           <td className="py-3 px-3 text-[11px]">
-                            <div className="flex items-center space-x-1 text-slate-700 font-medium truncate max-w-[140px]">
-                              <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
-                              <span className="truncate">{rec.location || 'HQ Office'}</span>
+                            <div className="flex items-center space-x-1 text-slate-700 font-medium truncate max-w-[160px]">
+                              {rec.isAnonymized || rec.zeroSignalVerified || rec.checkInMethod?.includes('Zero-Tracking') ? (
+                                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" title="Zero-Tracking Anonymized Zone" />
+                              ) : (
+                                <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
+                              )}
+                              <span className={`truncate ${rec.isAnonymized || rec.locationAnonymized ? 'text-emerald-800 font-semibold' : ''}`}>
+                                {rec.location || 'Anonymized Campus Zone'}
+                              </span>
                             </div>
-                            <div className="text-[10px] text-slate-400 font-mono">
-                              {rec.checkInMethod} • {rec.ipAddress || '192.168.1.1'}
+                            <div className="flex flex-wrap items-center gap-1 mt-0.5 text-[10px]">
+                              {(rec.zeroSignalVerified || rec.checkInMethod?.includes('Zero-Tracking')) && (
+                                <span className="inline-flex items-center px-1.5 py-0.2 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 text-[9px] font-bold">
+                                  Zero-Track
+                                </span>
+                              )}
+                              {(rec.vpnProtected || rec.ipAddress?.includes('VPN')) && (
+                                <span className="inline-flex items-center px-1.5 py-0.2 rounded bg-purple-50 text-purple-700 border border-purple-200 text-[9px] font-mono">
+                                  VPN
+                                </span>
+                              )}
+                              <span className="text-slate-400 font-mono">
+                                {rec.checkInMethod?.replace('Manual Self-Attestation (Zero-Tracking)', 'Self-Attest')}
+                              </span>
                             </div>
                           </td>
                           <td className="py-3 px-3 text-[11px] text-slate-500 max-w-[150px] truncate">
@@ -1116,6 +1242,15 @@ export const AttendanceView: React.FC<AttendanceViewProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Workplace Internet & Wi-Fi Whitelist Tab (Admin Only) */}
+      {activeTab === 'network-whitelist' && isSuperOrAdmin && (
+        <NetworkWhitelistView
+          currentUserRole={currentUser.role}
+          lang={lang}
+          onRefresh={refreshData}
+        />
       )}
 
       {/* Manual Attendance Modal */}
