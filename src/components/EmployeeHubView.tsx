@@ -31,13 +31,19 @@ import {
   Trash2,
   Edit3,
   Check,
-  CheckCircle
+  CheckCircle,
+  Target,
+  Users as UsersIcon
 } from 'lucide-react';
 import { User, Language, ActionPlan, Activity, AttendanceRecord } from '../types';
 import { translations } from '../services/i18n';
 import { db, WORK_SHIFTS } from '../services/db';
 import { NavTab } from './Sidebar';
 import { EditAttendanceShiftModal } from './EditAttendanceShiftModal';
+import { PlanCollaborationModal } from './PlanCollaborationModal';
+import { PlanGoalReviewModal } from './PlanGoalReviewModal';
+import { TaskScheduleModal } from './TaskScheduleModal';
+import { TelegramNotificationModal } from './TelegramNotificationModal';
 
 interface EmployeeHubViewProps {
   currentUser: User;
@@ -107,6 +113,12 @@ export const EmployeeHubView: React.FC<EmployeeHubViewProps> = ({
   // Delete confirmation modal state
   const [planToDelete, setPlanToDelete] = useState<ActionPlan | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  // Collaboration and Review Modals
+  const [collaborationPlan, setCollaborationPlan] = useState<ActionPlan | null>(null);
+  const [goalReviewPlan, setGoalReviewPlan] = useState<ActionPlan | null>(null);
+  const [scheduleActivity, setScheduleActivity] = useState<Activity | null>(null);
+  const [isTelegramModalOpen, setIsTelegramModalOpen] = useState(false);
 
   // Handle plan deletion / archive from hub
   const handleDeleteOwnedPlan = (plan: ActionPlan, e: React.MouseEvent) => {
@@ -396,6 +408,28 @@ export const EmployeeHubView: React.FC<EmployeeHubViewProps> = ({
               </button>
             </div>
           )}
+
+          {/* Telegram Reminder Alerts Status Strip */}
+          <div className="mt-3 pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-xs">
+            <div className="flex items-center space-x-2">
+              <Send className="w-3.5 h-3.5 text-sky-600 shrink-0" />
+              <span className="text-slate-600 font-medium">
+                Telegram Check-in Alert:
+              </span>
+              <span className="font-mono text-slate-800 font-semibold bg-sky-50 text-sky-800 border border-sky-200 px-2 py-0.5 rounded text-[11px]">
+                {currentUser.telegramHandle || (currentUser.telegramChatId ? `Chat ID: ${currentUser.telegramChatId}` : 'Not Linked')}
+              </span>
+              <span className="text-[11px] text-slate-400 hidden sm:inline">
+                (Reminds unclocked staff • No auto-check in)
+              </span>
+            </div>
+            <button
+              onClick={() => setIsTelegramModalOpen(true)}
+              className="text-[11px] font-semibold text-sky-700 hover:text-sky-900 bg-sky-50 hover:bg-sky-100 px-2.5 py-1 rounded-lg border border-sky-200 transition active:scale-95"
+            >
+              Telegram Alert Center
+            </button>
+          </div>
         </div>
       </div>
 
@@ -573,6 +607,13 @@ export const EmployeeHubView: React.FC<EmployeeHubViewProps> = ({
                           <span>•</span>
                           <span>Status: <strong className={task.status === 'Completed' ? 'text-emerald-600 font-semibold' : 'text-blue-600'}>{task.status}</strong></span>
                         </div>
+                        {task.lastAdjustmentReason && (
+                          <div className="mt-1">
+                            <span className="text-[10px] text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-0.2 rounded font-medium">
+                              Adjustment: {task.lastAdjustmentReason}
+                            </span>
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -621,14 +662,23 @@ export const EmployeeHubView: React.FC<EmployeeHubViewProps> = ({
                         </div>
                       </div>
 
-                      <div className="flex items-center justify-between pt-1">
-                        <button
-                          onClick={() => onNavigatePlan(task.actionPlanId)}
-                          className="flex items-center space-x-1 text-blue-600 hover:underline font-semibold"
-                        >
-                          <span>Open Associated Action Plan</span>
-                          <ExternalLink className="w-3.5 h-3.5" />
-                        </button>
+                      <div className="flex flex-wrap items-center justify-between pt-1 gap-2">
+                        <div className="flex items-center space-x-2">
+                          <button
+                            onClick={() => onNavigatePlan(task.actionPlanId)}
+                            className="flex items-center space-x-1 text-blue-600 hover:underline font-semibold"
+                          >
+                            <span>Open Associated Action Plan</span>
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => setScheduleActivity(task)}
+                            className="flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-semibold text-[11px] border border-indigo-200 transition"
+                          >
+                            <Clock className="w-3 h-3" />
+                            <span>Adjust Deadline & Priority</span>
+                          </button>
+                        </div>
                         <span className="text-[11px] text-slate-400">
                           Assigned by: {task.teamLeaderId ? 'Team Lead' : 'Department'}
                         </span>
@@ -780,11 +830,30 @@ export const EmployeeHubView: React.FC<EmployeeHubViewProps> = ({
                           <span>Priority: {plan.priority}</span>
                         )}
                       </div>
+
+                      {/* Alignment Status & Collaboration Badge */}
+                      {plan.alignmentStatus && (
+                        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                          <span className={`inline-flex items-center space-x-1 px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+                            plan.alignmentStatus === 'Fully Aligned' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                            plan.alignmentStatus === 'Review Needed' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
+                            'bg-rose-50 text-rose-700 border border-rose-200'
+                          }`}>
+                            <Target className="w-2.5 h-2.5" />
+                            <span>{plan.alignmentStatus}</span>
+                          </span>
+                          {plan.nextReviewDate && (
+                            <span className="text-[10px] text-slate-400">
+                              {lang === 'km' ? 'ត្រួតពិនិត្យ៖' : 'Review:'} {plan.nextReviewDate}
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     {/* Actions */}
-                    <div className="flex items-center justify-between mt-3 pt-2 border-t border-slate-100 gap-2">
-                      <div className="flex items-center space-x-2">
+                    <div className="flex flex-wrap items-center justify-between mt-3 pt-2 border-t border-slate-100 gap-2">
+                      <div className="flex flex-wrap items-center gap-1.5">
                         {plan.status !== 'Completed' ? (
                           <button
                             type="button"
@@ -801,9 +870,32 @@ export const EmployeeHubView: React.FC<EmployeeHubViewProps> = ({
                             <span>{lang === 'km' ? 'បានបញ្ចប់' : 'Completed'}</span>
                           </span>
                         )}
+
+                        {/* Collaborate button */}
+                        <button
+                          type="button"
+                          onClick={() => setCollaborationPlan(plan)}
+                          className="inline-flex items-center space-x-1 px-2 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[11px] font-semibold border border-indigo-200 transition"
+                          title={lang === 'km' ? 'ចែករំលែកដើម្បីសហការ និងមតិកែលម្អ' : 'Share for collaboration and feedback'}
+                        >
+                          <UsersIcon className="w-3 h-3" />
+                          <span>{lang === 'km' ? 'សហការ' : 'Collaborate'}</span>
+                        </button>
+
+                        {/* Goal Review button */}
+                        <button
+                          type="button"
+                          onClick={() => setGoalReviewPlan(plan)}
+                          className="inline-flex items-center space-x-1 px-2 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-[11px] font-semibold border border-blue-200 transition"
+                          title={lang === 'km' ? 'ត្រួតពិនិត្យការតម្រឹមគោលដៅទៀងទាត់' : 'Periodic goal alignment review'}
+                        >
+                          <Target className="w-3 h-3" />
+                          <span>{lang === 'km' ? 'ត្រួតពិនិត្យគោលដៅ' : 'Review'}</span>
+                        </button>
+
                         <button
                           onClick={() => onNavigatePlan(plan.id)}
-                          className="text-xs font-bold text-blue-600 hover:text-blue-800 flex items-center space-x-1"
+                          className="text-xs font-bold text-blue-600 hover:text-blue-800 flex items-center space-x-1 px-1.5 py-1"
                         >
                           <span>{lang === 'km' ? 'បើក និងគ្រប់គ្រង' : 'Open'}</span>
                           <ExternalLink className="w-3 h-3" />
@@ -944,6 +1036,57 @@ export const EmployeeHubView: React.FC<EmployeeHubViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* PLAN COLLABORATION & FEEDBACK MODAL */}
+      {collaborationPlan && (
+        <PlanCollaborationModal
+          isOpen={!!collaborationPlan}
+          onClose={() => setCollaborationPlan(null)}
+          plan={collaborationPlan}
+          currentUser={currentUser}
+          lang={lang}
+          onSuccess={() => {
+            setRefreshKey(k => k + 1);
+          }}
+        />
+      )}
+
+      {/* PLAN GOAL REVIEW MODAL */}
+      {goalReviewPlan && (
+        <PlanGoalReviewModal
+          isOpen={!!goalReviewPlan}
+          onClose={() => setGoalReviewPlan(null)}
+          plan={goalReviewPlan}
+          currentUser={currentUser}
+          lang={lang}
+          onSuccess={() => {
+            setRefreshKey(k => k + 1);
+          }}
+        />
+      )}
+
+      {/* TASK SCHEDULE & PRIORITY ADJUSTMENT MODAL */}
+      {scheduleActivity && (
+        <TaskScheduleModal
+          isOpen={!!scheduleActivity}
+          onClose={() => setScheduleActivity(null)}
+          activity={scheduleActivity}
+          currentUser={currentUser}
+          lang={lang}
+          onSuccess={() => {
+            setRefreshKey(k => k + 1);
+          }}
+        />
+      )}
+
+      {/* TELEGRAM ATTENDANCE NOTIFICATIONS MODAL */}
+      <TelegramNotificationModal
+        isOpen={isTelegramModalOpen}
+        onClose={() => setIsTelegramModalOpen(false)}
+        currentUser={currentUser}
+        lang={lang}
+        onToast={(msg) => showToast(msg)}
+      />
     </div>
   );
 };

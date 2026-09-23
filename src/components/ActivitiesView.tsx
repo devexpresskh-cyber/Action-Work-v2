@@ -13,12 +13,15 @@ import {
   X, 
   Flag,
   ArrowRight,
-  ShieldAlert
+  ShieldAlert,
+  UserCheck,
+  Calendar
 } from 'lucide-react';
 import { Activity, Language, User as UserType, PriorityLevel, ActivityStatus } from '../types';
 import { translations } from '../services/i18n';
 import { db } from '../services/db';
 import { ProgressModal } from './ProgressModal';
+import { TaskScheduleModal } from './TaskScheduleModal';
 
 interface ActivitiesViewProps {
   currentUser: UserType;
@@ -39,13 +42,16 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
   // Filters
   const [search, setSearch] = useState('');
   const [planFilter, setPlanFilter] = useState('all');
-  const [employeeFilter, setEmployeeFilter] = useState('all');
+  const [employeeFilter, setEmployeeFilter] = useState(() => {
+    return currentUser.role === 'Employee' ? currentUser.id : 'all';
+  });
   const [statusFilter, setStatusFilter] = useState('all');
 
   // Modals
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingActivity, setEditingActivity] = useState<Activity | null>(null);
   const [progressActivity, setProgressActivity] = useState<Activity | null>(null);
+  const [scheduleActivity, setScheduleActivity] = useState<Activity | null>(null);
   const [activityToDelete, setActivityToDelete] = useState<Activity | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [dependencyWarning, setDependencyWarning] = useState<string | null>(null);
@@ -269,15 +275,47 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
 
       {/* Filters */}
       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-3 text-xs">
-        <div className="relative w-full max-w-xs">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-          <input
-            type="text"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder={lang === 'km' ? 'ស្វែងរកកូដកិច្ចការ ចំណងជើង...' : 'Search task code, title...'}
-            className="w-full pl-9 pr-3 py-1.5 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
-          />
+        <div className="flex flex-wrap items-center gap-2 flex-1 min-w-[240px]">
+          <div className="relative w-full max-w-xs">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+            <input
+              type="text"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder={lang === 'km' ? 'ស្វែងរកកូដកិច្ចការ ចំណងជើង...' : 'Search task code, title...'}
+              className="w-full pl-9 pr-3 py-1.5 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+            />
+          </div>
+
+          {/* Direct My Assigned Tasks Toggle */}
+          <div className="flex items-center rounded-lg border border-slate-200 bg-slate-100 p-0.5 text-xs">
+            <button
+              onClick={() => setEmployeeFilter('all')}
+              className={`px-2.5 py-1 rounded-md font-semibold transition ${
+                employeeFilter === 'all'
+                  ? 'bg-white text-slate-900 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              {lang === 'km' ? 'ទាំងអស់' : 'All Tasks'} ({activities.length})
+            </button>
+            <button
+              onClick={() => setEmployeeFilter(currentUser.id)}
+              className={`px-2.5 py-1 rounded-md font-semibold transition flex items-center space-x-1 ${
+                employeeFilter === currentUser.id
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <UserCheck className="w-3.5 h-3.5" />
+              <span>{lang === 'km' ? 'កិច្ចការរបស់ខ្ញុំ' : 'My Assigned'}</span>
+              <span className={`ml-1 px-1.5 py-0.2 rounded-full text-[10px] ${
+                employeeFilter === currentUser.id ? 'bg-blue-700 text-white' : 'bg-slate-200 text-slate-700'
+              }`}>
+                {activities.filter(a => a.assignedEmployeeId === currentUser.id).length}
+              </span>
+            </button>
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -321,6 +359,32 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
           </select>
         </div>
       </div>
+
+      {/* Direct Responsibility & Priority Management Banner */}
+      {employeeFilter === currentUser.id && (
+        <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-indigo-950 text-white p-4 rounded-xl shadow-xs border border-blue-900/40 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+          <div className="space-y-1 max-w-2xl">
+            <div className="flex items-center space-x-2">
+              <span className="px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 font-bold border border-blue-400/30 text-[10px]">
+                {lang === 'km' ? 'ការគ្រប់គ្រងភារកិច្ចផ្ទាល់ខ្លួន' : 'Personal Task Responsibilities'}
+              </span>
+              <span className="text-slate-300 font-semibold">
+                {lang === 'km' ? 'ការកំណត់អាទិភាព និងការកែសម្រួលកាលបរិច្ឆេទ' : 'Prioritization & Deadline Adjustments'}
+              </span>
+            </div>
+            <p className="text-slate-300 text-[11px] leading-relaxed">
+              {lang === 'km'
+                ? 'តាមរយៈការចូលប្រើប្រាស់ដោយផ្ទាល់ បុគ្គលិកអាចកំណត់អាទិភាពកិច្ចការប្រកបដោយប្រសិទ្ធភាព និងធ្វើការកែសម្រួលចាំបាច់ដើម្បីឆ្លើយតបនឹងកាលកំណត់។'
+                : 'By having direct access, employees can prioritize their tasks effectively and make necessary adjustments to meet deadlines smoothly.'}
+            </p>
+          </div>
+          <div className="shrink-0 flex items-center space-x-2">
+            <span className="px-3 py-1.5 rounded-lg bg-white/10 text-slate-200 font-mono text-[11px] border border-white/15">
+              {activities.filter(a => a.assignedEmployeeId === currentUser.id && a.status === 'Completed').length} / {activities.filter(a => a.assignedEmployeeId === currentUser.id).length} {lang === 'km' ? 'បានបញ្ចប់' : 'Completed'}
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Dependency Warning Modal */}
       {dependencyWarning && (
@@ -424,6 +488,14 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                             </span>
                           </div>
                         )}
+                        {act.lastAdjustmentReason && (
+                          <div className="mt-1 flex items-center space-x-1">
+                            <span className="text-[10px] text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-0.2 rounded font-medium truncate max-w-[260px]">
+                              {lang === 'km' ? 'ការកែសម្រួល៖ ' : 'Adjustment: '}
+                              {act.lastAdjustmentReason}
+                            </span>
+                          </div>
+                        )}
                       </td>
 
                       {/* Action Plan */}
@@ -477,6 +549,13 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
                       {/* Actions */}
                       <td className="py-3 px-4 text-right">
                         <div className="flex items-center justify-end space-x-1">
+                          <button
+                            onClick={() => setScheduleActivity(act)}
+                            className="p-1 rounded text-slate-500 hover:text-indigo-600 hover:bg-slate-100"
+                            title={lang === 'km' ? 'កែសម្រួលកាលបរិច្ឆេទ & អាទិភាព' : 'Manage Deadline & Priority'}
+                          >
+                            <Calendar className="w-4 h-4" />
+                          </button>
                           <button
                             onClick={() => setProgressActivity(act)}
                             className="p-1 rounded text-slate-500 hover:text-emerald-600 hover:bg-slate-100"
@@ -844,6 +923,20 @@ export const ActivitiesView: React.FC<ActivitiesViewProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* TASK SCHEDULE & PRIORITY ADJUSTMENT MODAL */}
+      {scheduleActivity && (
+        <TaskScheduleModal
+          isOpen={!!scheduleActivity}
+          onClose={() => setScheduleActivity(null)}
+          activity={scheduleActivity}
+          currentUser={currentUser}
+          lang={lang}
+          onSuccess={() => {
+            refreshActivities();
+          }}
+        />
       )}
     </div>
   );

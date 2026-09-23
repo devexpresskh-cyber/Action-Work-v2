@@ -3,22 +3,21 @@ import { WorkplaceNetwork, NetworkSettingsConfig, NetworkAccessLog, CurrentNetwo
 export const initialWorkplaceNetworks: WorkplaceNetwork[] = [
   {
     id: 'net-hq-primary',
-    name: 'Phnom Penh HQ - Primary Wi-Fi (Floors 1-5)',
-    nameKm: 'ការិយាល័យកណ្តាលភ្នំពេញ - Wi-Fi ចម្បង (ជាន់ទី ១-៥)',
-    ssid: 'CORP-HQ-SECURE-5G',
-    bssidPrefix: '74:83:C2:A1',
-    ipRanges: ['192.168.1.0/24', '192.168.2.0/24'],
-    gatewayIp: '192.168.1.1',
-    dnsServers: ['192.168.1.2', '1.1.1.1'],
+    name: 'Phnom Penh HQ - Main Office Network (Floors 1-5)',
+    nameKm: 'ការិយាល័យកណ្តាលភ្នំពេញ - បណ្តាញការិយាល័យចម្បង (ជាន់ទី ១-៥)',
     locationName: 'Phnom Penh HQ - Main Tower',
     departmentId: 'all',
-    securityType: 'WPA3 Enterprise (802.1X)',
+    ipRanges: ['192.168.1.0/24', '192.168.2.0/24'],
+    allowedSpecificIps: ['192.168.1.45', '192.168.1.88', '192.168.1.102', '192.168.2.50'],
+    gatewayIp: '192.168.1.1',
+    dnsServers: ['192.168.1.2', '1.1.1.1'],
+    securityType: 'Enterprise Static IP',
     status: 'Active',
     allowSeamlessCheckIn: true,
     firewallConfigured: true,
     connectedDevicesCount: 148,
-    description: 'High-density corporate mesh covering executive floor, administrative suites, and open desks.',
-    descriptionKm: 'បណ្តាញ Wi-Fi កម្រិតសហគ្រាសគ្របដណ្តប់ជាន់ថ្នាក់ដឹកនាំ រដ្ឋបាល និងតុបំពេញការងារទូទៅ។',
+    description: 'High-speed corporate office intranet covering executive suites, administrative floors, and open desks.',
+    descriptionKm: 'បណ្តាញការិយាល័យកម្រិតសហគ្រាសគ្របដណ្តប់ជាន់ថ្នាក់ដឹកនាំ រដ្ឋបាល និងតុបំពេញការងារទូទៅ។',
     addedAt: '2026-01-10',
     lastActive: 'Just now',
   },
@@ -26,41 +25,39 @@ export const initialWorkplaceNetworks: WorkplaceNetwork[] = [
     id: 'net-tech-datacenter',
     name: 'Tech Wing & Data Center Secure Network',
     nameKm: 'ផ្នែកបច្ចេកវិទ្យា & មជ្ឈមណ្ឌលទិន្នន័យ (DC Wing)',
-    ssid: 'CORP-DC-ENGINEERING-5G',
-    bssidPrefix: '74:83:C2:B9',
-    ipRanges: ['192.168.10.0/24'],
-    gatewayIp: '192.168.10.1',
-    dnsServers: ['192.168.10.2', '8.8.8.8'],
     locationName: 'HQ Data Center - Room 102',
     departmentId: 'dept-tech',
-    securityType: 'WPA3 Enterprise (802.1X)',
+    ipRanges: ['192.168.10.0/24'],
+    allowedSpecificIps: ['192.168.10.22', '192.168.10.85', '192.168.10.100'],
+    gatewayIp: '192.168.10.1',
+    dnsServers: ['192.168.10.2', '8.8.8.8'],
+    securityType: 'Dedicated Lease Line',
     status: 'Active',
     allowSeamlessCheckIn: true,
     firewallConfigured: true,
     connectedDevicesCount: 42,
-    description: 'Dedicated isolated VLAN for software engineering, devops, and infrastructure administrators.',
+    description: 'Dedicated isolated enterprise VLAN for software engineering, devops, and infrastructure administrators.',
     descriptionKm: 'VLAN ដាច់ដោយឡែកសម្រាប់ក្រុមវិស្វកម្មកម្មវិធី DevOps និងអ្នកគ្រប់គ្រងហេដ្ឋារចនាសម្ព័ន្ធ។',
     addedAt: '2026-02-15',
     lastActive: 'Just now',
   },
   {
     id: 'net-siemreap-branch',
-    name: 'Siem Reap Regional Office Wi-Fi',
+    name: 'Siem Reap Regional Office Network',
     nameKm: 'ការិយាល័យតំបន់ខេត្តសៀមរាប',
-    ssid: 'CORP-SR-OFFICE-WIFI',
-    bssidPrefix: 'E4:95:6E:33',
-    ipRanges: ['192.168.20.0/24'],
-    gatewayIp: '192.168.20.1',
-    dnsServers: ['192.168.20.2', '1.0.0.1'],
     locationName: 'Siem Reap Regional Branch',
     departmentId: 'all',
-    securityType: 'WPA2/WPA3 Personal',
+    ipRanges: ['192.168.20.0/24'],
+    allowedSpecificIps: ['192.168.20.15', '192.168.20.40'],
+    gatewayIp: '192.168.20.1',
+    dnsServers: ['192.168.20.2', '1.0.0.1'],
+    securityType: 'Office Subnet',
     status: 'Active',
     allowSeamlessCheckIn: true,
     firewallConfigured: true,
     connectedDevicesCount: 28,
-    description: 'Branch office wireless infrastructure with direct SD-WAN tunnel to Phnom Penh HQ core.',
-    descriptionKm: 'ហេដ្ឋារចនាសម្ព័ន្ធឥតខ្សែសាខាខេត្តសៀមរាប ភ្ជាប់តាមរយៈ SD-WAN មកកាន់ទីស្នាក់ការកណ្តាល។',
+    description: 'Branch office network infrastructure with direct SD-WAN tunnel to Phnom Penh HQ core.',
+    descriptionKm: 'ហេដ្ឋារចនាសម្ព័ន្ធបណ្តាញការិយាល័យសាខាខេត្តសៀមរាប ភ្ជាប់តាមរយៈ SD-WAN មកកាន់ទីស្នាក់ការកណ្តាល។',
     addedAt: '2026-03-01',
     lastActive: '3 mins ago',
   },
@@ -68,12 +65,12 @@ export const initialWorkplaceNetworks: WorkplaceNetwork[] = [
     id: 'net-enterprise-vpn',
     name: 'Corporate WireGuard / IPsec VPN Gateway',
     nameKm: 'ច្រកទ្វារបណ្តាញសុវត្ថិភាព Corporate VPN (WireGuard/IPsec)',
-    ssid: 'CORP-VPN-TUNNEL',
+    locationName: 'Remote / Field Office (VPN Subnet)',
+    departmentId: 'all',
     ipRanges: ['10.8.0.0/16', '10.9.0.0/16'],
+    allowedSpecificIps: ['10.8.0.34', '10.8.0.50', '10.9.0.12'],
     gatewayIp: '10.8.0.1',
     dnsServers: ['10.8.0.2', '1.1.1.1'],
-    locationName: 'Remote / Field Office (VPN Masked)',
-    departmentId: 'all',
     securityType: 'Corporate VPN Tunnel',
     status: 'Active',
     allowSeamlessCheckIn: true,
@@ -86,22 +83,21 @@ export const initialWorkplaceNetworks: WorkplaceNetwork[] = [
   },
   {
     id: 'net-battambang-hub',
-    name: 'Battambang Operations Center Wi-Fi',
+    name: 'Battambang Operations Center Network',
     nameKm: 'មជ្ឈមណ្ឌលប្រតិបត្តិការខេត្តបាត់ដំបង',
-    ssid: 'CORP-BB-OPERATIONS',
-    bssidPrefix: 'D8:07:B6:5C',
-    ipRanges: ['192.168.30.0/24'],
-    gatewayIp: '192.168.30.1',
-    dnsServers: ['192.168.30.2', '8.8.4.4'],
     locationName: 'Battambang Field Center',
     departmentId: 'dept-ops',
-    securityType: 'WPA2/WPA3 Personal',
+    ipRanges: ['192.168.30.0/24'],
+    allowedSpecificIps: ['192.168.30.12', '192.168.30.55'],
+    gatewayIp: '192.168.30.1',
+    dnsServers: ['192.168.30.2', '8.8.4.4'],
+    securityType: 'Office Subnet',
     status: 'Active',
     allowSeamlessCheckIn: true,
     firewallConfigured: true,
     connectedDevicesCount: 19,
-    description: 'Operational center Wi-Fi serving logistics, quality assurance, and regional field teams.',
-    descriptionKm: 'បណ្តាញ Wi-Fi មជ្ឈមណ្ឌលប្រតិបត្តិការសម្រាប់ក្រុមភស្តុភារកម្ម និងត្រួតពិនិត្យគុណភាព។',
+    description: 'Operational center network serving logistics, quality assurance, and regional field teams.',
+    descriptionKm: 'បណ្តាញការិយាល័យមជ្ឈមណ្ឌលប្រតិបត្តិការសម្រាប់ក្រុមភស្តុភារកម្ម និងត្រួតពិនិត្យគុណភាព។',
     addedAt: '2026-04-12',
     lastActive: '12 mins ago',
   },
@@ -110,6 +106,15 @@ export const initialWorkplaceNetworks: WorkplaceNetwork[] = [
 export const defaultNetworkSettings: NetworkSettingsConfig = {
   enforceMode: 'Flexible',
   seamlessCheckInEnabled: true,
+  allowedSpecificIps: [
+    '192.168.1.45',
+    '192.168.1.88',
+    '192.168.10.22',
+    '10.8.0.34',
+    '203.0.113.15',
+    '203.0.113.88',
+    '192.168.20.15',
+  ],
   allowVpnFallback: true,
   allowedPorts: [80, 443, 8443, 123],
   sslTlsInspectionBypass: true,
@@ -123,30 +128,27 @@ export const defaultNetworkSettings: NetworkSettingsConfig = {
 export const simulatedConnectionProfiles: CurrentNetworkConnection[] = [
   {
     networkId: 'net-hq-primary',
-    networkName: 'Phnom Penh HQ - Primary Wi-Fi (Floors 1-5)',
-    ssid: 'CORP-HQ-SECURE-5G',
+    networkName: 'Phnom Penh HQ - Main Office Network (IP: 192.168.1.45)',
     clientIp: '192.168.1.45',
     gatewayIp: '192.168.1.1',
     isWhitelisted: true,
     seamlessEligible: true,
     latencyMs: 3,
-    connectionType: 'Workplace Wi-Fi',
+    connectionType: 'Authorized Workplace IP',
   },
   {
     networkId: 'net-tech-datacenter',
-    networkName: 'Tech Wing & Data Center Secure Network',
-    ssid: 'CORP-DC-ENGINEERING-5G',
+    networkName: 'Tech Wing & Data Center Network (IP: 192.168.10.22)',
     clientIp: '192.168.10.22',
     gatewayIp: '192.168.10.1',
     isWhitelisted: true,
     seamlessEligible: true,
     latencyMs: 1,
-    connectionType: 'Workplace Wi-Fi',
+    connectionType: 'Authorized Workplace IP',
   },
   {
     networkId: 'net-enterprise-vpn',
-    networkName: 'Corporate WireGuard / IPsec VPN Gateway',
-    ssid: 'CORP-VPN-TUNNEL',
+    networkName: 'Corporate WireGuard VPN Gateway (IP: 10.8.0.34)',
     clientIp: '10.8.0.34',
     gatewayIp: '10.8.0.1',
     isWhitelisted: true,
@@ -155,26 +157,24 @@ export const simulatedConnectionProfiles: CurrentNetworkConnection[] = [
     connectionType: 'Corporate VPN',
   },
   {
-    networkId: 'ext-guest-wifi',
-    networkName: 'HQ Guest / Visitor Wireless (Restricted)',
-    ssid: 'CORP-GUEST-OPEN',
-    clientIp: '172.16.0.88',
-    gatewayIp: '172.16.0.1',
-    isWhitelisted: false,
-    seamlessEligible: false,
-    latencyMs: 12,
-    connectionType: 'Guest Wi-Fi',
+    networkId: 'spec-static-ip-1',
+    networkName: 'Authorized Specific Static IP (IP: 203.0.113.15)',
+    clientIp: '203.0.113.15',
+    gatewayIp: '203.0.113.1',
+    isWhitelisted: true,
+    seamlessEligible: true,
+    latencyMs: 8,
+    connectionType: 'Specific Allowed IP',
   },
   {
-    networkId: 'ext-home-lte',
-    networkName: 'External Home Broadband / Cellular LTE',
-    ssid: 'Home_Fiber_5G / Cell-Data',
+    networkId: 'ext-remote-isp',
+    networkName: 'External Remote IP / Public ISP (Non-Whitelisted)',
     clientIp: '114.119.130.42',
     gatewayIp: '114.119.130.1',
     isWhitelisted: false,
     seamlessEligible: false,
     latencyMs: 44,
-    connectionType: 'External / Cellular',
+    connectionType: 'External / Remote IP',
   },
 ];
 
@@ -364,19 +364,47 @@ export function isIpInCidr(ip: string, cidr: string): boolean {
 }
 
 /**
- * Validates whether an IP address matches any of the given networks' whitelisted ranges.
+ * Validates whether an IP address matches any of the given networks' whitelisted ranges
+ * or multiple specific allowed IP addresses.
  */
 export function checkIpAgainstNetworks(
   ip: string,
-  networks: WorkplaceNetwork[]
-): { isWhitelisted: boolean; matchedNetwork?: WorkplaceNetwork } {
+  networks: WorkplaceNetwork[],
+  globalSpecificIps?: string[]
+): { isWhitelisted: boolean; matchedNetwork?: WorkplaceNetwork; matchedIp?: string } {
+  const cleanIp = (ip || '').trim().split(' ')[0]; // Remove extra tags if any
+  if (!cleanIp) return { isWhitelisted: false };
+
+  // 1. Check direct global specific allowed IPs
+  if (globalSpecificIps && globalSpecificIps.length > 0) {
+    for (const specIp of globalSpecificIps) {
+      const cleanSpec = (specIp || '').trim();
+      if (cleanSpec && (cleanIp === cleanSpec || isIpInCidr(cleanIp, cleanSpec))) {
+        return { isWhitelisted: true, matchedIp: cleanSpec };
+      }
+    }
+  }
+
+  // 2. Check active workplace networks (both specific IPs and CIDR/ranges)
   const activeNetworks = networks.filter(n => n.status === 'Active');
   for (const net of activeNetworks) {
+    // Check network specific allowed IPs
+    if (net.allowedSpecificIps && net.allowedSpecificIps.length > 0) {
+      for (const specIp of net.allowedSpecificIps) {
+        const cleanSpec = (specIp || '').trim();
+        if (cleanSpec && (cleanIp === cleanSpec || isIpInCidr(cleanIp, cleanSpec))) {
+          return { isWhitelisted: true, matchedNetwork: net, matchedIp: cleanSpec };
+        }
+      }
+    }
+
+    // Check network IP ranges / CIDRs
     for (const range of net.ipRanges) {
-      if (isIpInCidr(ip, range)) {
+      if (isIpInCidr(cleanIp, range)) {
         return { isWhitelisted: true, matchedNetwork: net };
       }
     }
   }
+
   return { isWhitelisted: false };
 }

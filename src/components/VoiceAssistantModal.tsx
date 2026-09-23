@@ -650,7 +650,7 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
                       <div>
                         <div className="flex items-center space-x-2">
                           <span className="text-xs font-bold uppercase tracking-wider">
-                            {lastExecutionResult.intent.replace('_', ' ')}
+                            {(lastExecutionResult?.intent || 'COMMAND').replace(/_/g, ' ')}
                           </span>
                           <span className="text-[10px] text-slate-500">
                             {new Date(lastExecutionResult.timestamp).toLocaleTimeString()}

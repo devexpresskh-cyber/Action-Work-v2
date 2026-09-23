@@ -350,9 +350,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   </span>
                 </div>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  {lang === 'km'
-                    ? `អត្រាវត្តមានស្ថាប័នថ្ងៃនេះ៖ ${presentCount}/${totalEmps} បុគ្គលិកមានវត្តមាន (${complianceRate}%) • មានរបាយការណ៍ស្វ័យប្រវត្តិប្រចាំខែ`
-                    : `Corporate Rate Today: ${presentCount}/${totalEmps} Staff Present (${complianceRate}%) • Automated Monthly Reports available`}
+                  {currentUser.role === 'Employee'
+                    ? (lang === 'km'
+                        ? 'កំណត់ត្រាវត្តមានផ្ទាល់ខ្លួន (ការពារឯកជនភាព) • ប្រសិនបើអ្នកត្រូវការពិនិត្យ ឬគ្រប់គ្រងវត្តមានអ្នកដទៃ សូមទាក់ទងអ្នកគ្រប់គ្រង ឬ HR'
+                        : 'Personal Attendance Record (Privacy Protected) • To check or manage attendance for others, contact your supervisor or HR.')
+                    : (lang === 'km'
+                        ? `អត្រាវត្តមានស្ថាប័នថ្ងៃនេះ៖ ${presentCount}/${totalEmps} បុគ្គលិកមានវត្តមាន (${complianceRate}%) • មានរបាយការណ៍ស្វ័យប្រវត្តិប្រចាំខែ`
+                        : `Corporate Rate Today: ${presentCount}/${totalEmps} Staff Present (${complianceRate}%) • Automated Monthly Reports available`)}
                 </p>
               </div>
             </div>

@@ -19,7 +19,9 @@ import {
   Eye,
   ShieldCheck,
   ChevronRight,
-  Info
+  Info,
+  Mic,
+  MessageSquare
 } from 'lucide-react';
 import { Language, User, NavTab } from '../types';
 import { translations } from '../services/i18n';
@@ -42,6 +44,8 @@ interface SidebarProps {
   isOpenMobile?: boolean;
   onCloseMobile?: () => void;
   onOpenRbacMatrix?: () => void;
+  onOpenVoiceAssistant?: () => void;
+  onOpenFeedback?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -52,6 +56,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   isOpenMobile,
   onCloseMobile,
   onOpenRbacMatrix,
+  onOpenVoiceAssistant,
+  onOpenFeedback,
 }) => {
   const t = translations[lang];
   const [showLockedItems, setShowLockedItems] = useState(false);
@@ -293,6 +299,36 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
 
             {renderNavList(true)}
+
+            {/* Quick Mobile Drawer Tools */}
+            {(onOpenVoiceAssistant || onOpenFeedback) && (
+              <div className="p-3 border-t border-slate-800 bg-slate-950/30 flex items-center space-x-2">
+                {onOpenVoiceAssistant && (
+                  <button
+                    onClick={() => {
+                      if (onCloseMobile) onCloseMobile();
+                      onOpenVoiceAssistant();
+                    }}
+                    className="flex-1 flex items-center justify-center space-x-1.5 py-2 px-2.5 rounded-lg bg-indigo-900/60 hover:bg-indigo-800 text-indigo-200 border border-indigo-700/50 text-xs font-semibold transition"
+                  >
+                    <Mic className="w-3.5 h-3.5 text-indigo-400" />
+                    <span>{lang === 'km' ? 'បញ្ជាសំឡេង' : 'Voice AI'}</span>
+                  </button>
+                )}
+                {onOpenFeedback && (
+                  <button
+                    onClick={() => {
+                      if (onCloseMobile) onCloseMobile();
+                      onOpenFeedback();
+                    }}
+                    className="flex-1 flex items-center justify-center space-x-1.5 py-2 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold transition"
+                  >
+                    <MessageSquare className="w-3.5 h-3.5 text-rose-400" />
+                    <span>{lang === 'km' ? 'មតិកែលម្អ' : 'Feedback'}</span>
+                  </button>
+                )}
+              </div>
+            )}
 
             {/* Footer System Status in Mobile Drawer */}
             <div className="p-3 border-t border-slate-800 text-[11px] text-slate-400 bg-slate-950/50">

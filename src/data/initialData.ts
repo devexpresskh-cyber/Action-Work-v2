@@ -70,6 +70,9 @@ export const initialUsers: User[] = [
     role: 'Super Admin',
     status: 'Active',
     createdAt: '2026-01-01T08:00:00Z',
+    telegramHandle: '@sokhachea_cio',
+    telegramChatId: '128899011',
+    telegramNotificationsEnabled: true,
   },
   {
     id: 'usr-2',
@@ -82,6 +85,9 @@ export const initialUsers: User[] = [
     role: 'Administrator',
     status: 'Active',
     createdAt: '2026-01-02T08:00:00Z',
+    telegramHandle: '@veasnasam_sys',
+    telegramChatId: '123345562',
+    telegramNotificationsEnabled: true,
   },
   {
     id: 'usr-3',
@@ -94,6 +100,9 @@ export const initialUsers: User[] = [
     role: 'Department Manager',
     status: 'Active',
     createdAt: '2026-01-03T08:00:00Z',
+    telegramHandle: '@sophalchan_it',
+    telegramChatId: '179987763',
+    telegramNotificationsEnabled: true,
   },
   {
     id: 'usr-4',
@@ -106,6 +115,9 @@ export const initialUsers: User[] = [
     role: 'Team Leader',
     status: 'Active',
     createdAt: '2026-01-04T08:00:00Z',
+    telegramHandle: '@vireakou_tech',
+    telegramChatId: '892233444',
+    telegramNotificationsEnabled: true,
   },
   {
     id: 'usr-5',
@@ -118,6 +130,9 @@ export const initialUsers: User[] = [
     role: 'Employee',
     status: 'Active',
     createdAt: '2026-01-05T08:00:00Z',
+    telegramHandle: '@channarylim',
+    telegramChatId: '984455665',
+    telegramNotificationsEnabled: true,
   },
   {
     id: 'usr-6',
@@ -130,6 +145,9 @@ export const initialUsers: User[] = [
     role: 'Executive / Viewer',
     status: 'Active',
     createdAt: '2026-01-01T08:00:00Z',
+    telegramHandle: '@danyseng_exec',
+    telegramChatId: '117765436',
+    telegramNotificationsEnabled: true,
   },
   {
     id: 'usr-7',

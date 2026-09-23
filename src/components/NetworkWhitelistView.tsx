@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
 import {
-  Wifi,
-  ShieldCheck,
   Globe,
+  ShieldCheck,
   Sliders,
   Bell,
   Activity,
@@ -27,7 +26,9 @@ import {
   Edit2,
   HelpCircle,
   Cpu,
-  Server
+  Server,
+  Check,
+  X
 } from 'lucide-react';
 import { db } from '../services/db';
 import { translations } from '../services/i18n';
@@ -58,27 +59,33 @@ export const NetworkWhitelistView: React.FC<NetworkWhitelistViewProps> = ({
     db.getCurrentNetworkConnection()
   );
 
+  // Multi Specific IP input states
+  const [newSpecificIpInput, setNewSpecificIpInput] = useState('');
+  const [specificIpFeedback, setSpecificIpFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  // Custom simulation IP state
+  const [customSimIp, setCustomSimIp] = useState('');
+
   // Modal and Test States
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingNetwork, setEditingNetwork] = useState<WorkplaceNetwork | null>(null);
   const [testIpInput, setTestIpInput] = useState('192.168.1.45');
-  const [testResult, setTestResult] = useState<{ isWhitelisted: boolean; matchedNetwork?: WorkplaceNetwork; reason: string } | null>(null);
+  const [testResult, setTestResult] = useState<{ isWhitelisted: boolean; matchedNetwork?: WorkplaceNetwork; matchedIp?: string; reason: string } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [logFilter, setLogFilter] = useState<string>('all');
   const [announcementStatus, setAnnouncementStatus] = useState<string | null>(null);
   const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null);
 
-  // Form State for Adding/Editing Network
+  // Form State for Adding/Editing Subnet / Network Profile
   const [formData, setFormData] = useState({
     name: '',
     nameKm: '',
-    ssid: '',
-    bssidPrefix: '',
+    allowedSpecificIps: '',
     ipRanges: '192.168.100.0/24',
     gatewayIp: '192.168.100.1',
     dnsServers: '1.1.1.1, 8.8.8.8',
     locationName: 'Phnom Penh HQ - Innovation Hub',
-    securityType: 'WPA3 Enterprise (802.1X)' as WorkplaceNetwork['securityType'],
+    securityType: 'Dedicated Static IP Pool' as WorkplaceNetwork['securityType'],
     status: 'Active' as WorkplaceNetwork['status'],
     allowSeamlessCheckIn: true,
     firewallConfigured: true,
@@ -93,6 +100,76 @@ export const NetworkWhitelistView: React.FC<NetworkWhitelistViewProps> = ({
     setNetworkLogs(db.getNetworkAccessLogs());
     setCurrentConnection(db.getCurrentNetworkConnection());
     if (onRefresh) onRefresh();
+  };
+
+  const handleAddSpecificIps = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!isSuperOrAdmin) return;
+    const raw = newSpecificIpInput.trim();
+    if (!raw) return;
+
+    // Support comma or space separated list of IPs
+    const ips = raw.split(/[\s,]+/).map(ip => ip.trim()).filter(Boolean);
+    let addedCount = 0;
+    ips.forEach(ip => {
+      const ok = db.addAllowedSpecificIp(ip);
+      if (ok) addedCount++;
+    });
+
+    if (addedCount > 0) {
+      setSpecificIpFeedback({
+        type: 'success',
+        message: `Successfully added ${addedCount} authorized IP address${addedCount > 1 ? 'es' : ''} for attendance check-in & checkout.`
+      });
+      setNewSpecificIpInput('');
+      refreshState();
+    } else {
+      setSpecificIpFeedback({
+        type: 'error',
+        message: 'The specified IP address(es) are already whitelisted or invalid.'
+      });
+    }
+
+    setTimeout(() => setSpecificIpFeedback(null), 4000);
+  };
+
+  const handleRemoveSpecificIp = (ip: string) => {
+    if (!isSuperOrAdmin) return;
+    db.removeAllowedSpecificIp(ip);
+    setSpecificIpFeedback({
+      type: 'success',
+      message: `Removed ${ip} from authorized attendance whitelist.`
+    });
+    setTimeout(() => setSpecificIpFeedback(null), 3000);
+    refreshState();
+  };
+
+  const handleWhitelistCurrentClientIp = () => {
+    if (!isSuperOrAdmin) return;
+    const curIp = currentConnection.clientIp;
+    if (!curIp) return;
+    const ok = db.addAllowedSpecificIp(curIp);
+    if (ok) {
+      setSpecificIpFeedback({
+        type: 'success',
+        message: `Your current client IP (${curIp}) has been authorized for check-in & checkout!`
+      });
+    } else {
+      setSpecificIpFeedback({
+        type: 'error',
+        message: `Your current client IP (${curIp}) is already in the whitelist.`
+      });
+    }
+    setTimeout(() => setSpecificIpFeedback(null), 4000);
+    refreshState();
+  };
+
+  const handleApplyCustomSimulatedIp = () => {
+    const ip = customSimIp.trim();
+    if (!ip) return;
+    const updated = db.setCustomClientIp(ip);
+    setCurrentConnection(updated);
+    refreshState();
   };
 
   const handleTestIp = (ipToTest?: string) => {
@@ -125,7 +202,7 @@ export const NetworkWhitelistView: React.FC<NetworkWhitelistViewProps> = ({
 
   const handleSaveNetwork = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.name.trim() || !formData.ssid.trim()) return;
+    if (!formData.name.trim()) return;
 
     const ranges = formData.ipRanges
       .split(',')
@@ -135,13 +212,16 @@ export const NetworkWhitelistView: React.FC<NetworkWhitelistViewProps> = ({
       .split(',')
       .map(d => d.trim())
       .filter(Boolean);
+    const specificIps = formData.allowedSpecificIps
+      .split(',')
+      .map(s => s.trim())
+      .filter(Boolean);
 
     if (editingNetwork) {
       db.updateWorkplaceNetwork(editingNetwork.id, {
         name: formData.name,
         nameKm: formData.nameKm || undefined,
-        ssid: formData.ssid,
-        bssidPrefix: formData.bssidPrefix || undefined,
+        allowedSpecificIps: specificIps,
         ipRanges: ranges,
         gatewayIp: formData.gatewayIp,
         dnsServers: dns,
@@ -156,8 +236,7 @@ export const NetworkWhitelistView: React.FC<NetworkWhitelistViewProps> = ({
       db.addWorkplaceNetwork({
         name: formData.name,
         nameKm: formData.nameKm || undefined,
-        ssid: formData.ssid,
-        bssidPrefix: formData.bssidPrefix || undefined,
+        allowedSpecificIps: specificIps,
         ipRanges: ranges,
         gatewayIp: formData.gatewayIp,
         dnsServers: dns,
@@ -181,8 +260,7 @@ export const NetworkWhitelistView: React.FC<NetworkWhitelistViewProps> = ({
       setFormData({
         name: netToEdit.name,
         nameKm: netToEdit.nameKm || '',
-        ssid: netToEdit.ssid,
-        bssidPrefix: netToEdit.bssidPrefix || '',
+        allowedSpecificIps: (netToEdit.allowedSpecificIps || []).join(', '),
         ipRanges: netToEdit.ipRanges.join(', '),
         gatewayIp: netToEdit.gatewayIp,
         dnsServers: netToEdit.dnsServers.join(', '),
@@ -198,13 +276,12 @@ export const NetworkWhitelistView: React.FC<NetworkWhitelistViewProps> = ({
       setFormData({
         name: '',
         nameKm: '',
-        ssid: '',
-        bssidPrefix: '',
+        allowedSpecificIps: '',
         ipRanges: '192.168.100.0/24',
         gatewayIp: '192.168.100.1',
         dnsServers: '1.1.1.1, 8.8.8.8',
         locationName: 'Phnom Penh HQ - Main Tower',
-        securityType: 'WPA3 Enterprise (802.1X)',
+        securityType: 'Dedicated Static IP Pool',
         status: 'Active',
         allowSeamlessCheckIn: true,
         firewallConfigured: true,
@@ -218,7 +295,7 @@ export const NetworkWhitelistView: React.FC<NetworkWhitelistViewProps> = ({
     e.preventDefault();
     if (!isSuperOrAdmin) return;
     db.updateNetworkSettings(networkSettings);
-    setSaveSuccessMsg('Network and firewall configuration updated successfully.');
+    setSaveSuccessMsg('IP whitelist policy and access rules updated successfully.');
     setTimeout(() => setSaveSuccessMsg(null), 3500);
     refreshState();
   };
@@ -230,12 +307,13 @@ export const NetworkWhitelistView: React.FC<NetworkWhitelistViewProps> = ({
       curUser.name,
       'NETWORK_GUIDE_BROADCAST',
       'Employee Communications',
-      'Broadcasted workplace Wi-Fi seamless check-in guide to all staff.'
+      'Broadcasted authorized workplace IP access policy to all staff.'
     );
-    setAnnouncementStatus('Announcement broadcasted! All employee portals received the Wi-Fi connection update notification.');
+    setAnnouncementStatus('Announcement broadcasted! All employee portals received the authorized IP access policy update.');
     setTimeout(() => setAnnouncementStatus(null), 5000);
   };
 
+  const allowedSpecificIps = networkSettings.allowedSpecificIps || [];
   const activeNetworksCount = networks.filter(n => n.status === 'Active').length;
   const totalConnectedDevices = networks.reduce((acc, n) => acc + (n.connectedDevicesCount || 0), 0);
   const filteredLogs = networkLogs.filter(log => {
@@ -245,8 +323,7 @@ export const NetworkWhitelistView: React.FC<NetworkWhitelistViewProps> = ({
       return (
         log.employeeName.toLowerCase().includes(q) ||
         log.clientIp.includes(q) ||
-        (log.matchedNetworkName && log.matchedNetworkName.toLowerCase().includes(q)) ||
-        (log.ssid && log.ssid.toLowerCase().includes(q))
+        (log.matchedNetworkName && log.matchedNetworkName.toLowerCase().includes(q))
       );
     }
     return true;
@@ -255,9 +332,9 @@ export const NetworkWhitelistView: React.FC<NetworkWhitelistViewProps> = ({
   return (
     <div id="network-whitelist-manager" className="space-y-6">
       {/* Top Banner & Overview */}
-      <div className="bg-gradient-to-r from-cyan-900 via-teal-900 to-slate-900 rounded-2xl p-6 text-white shadow-xl border border-teal-700/40 relative overflow-hidden">
+      <div className="bg-gradient-to-r from-teal-900 via-cyan-950 to-slate-900 rounded-2xl p-6 text-white shadow-xl border border-teal-700/40 relative overflow-hidden">
         <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none">
-          <Wifi className="w-64 h-64 text-teal-300" />
+          <Globe className="w-64 h-64 text-teal-300" />
         </div>
 
         <div className="relative z-10">
@@ -265,66 +342,88 @@ export const NetworkWhitelistView: React.FC<NetworkWhitelistViewProps> = ({
             <div className="space-y-1">
               <div className="flex items-center gap-2">
                 <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-teal-400/20 text-teal-200 border border-teal-400/30 flex items-center gap-1.5">
-                  <Wifi className="w-3.5 h-3.5" />
-                  {language === 'km' ? 'បណ្តាញ Wi-Fi និង IP អនុញ្ញាត' : 'Workplace Wi-Fi & IP Whitelist Engine'}
+                  <Globe className="w-3.5 h-3.5" />
+                  {language === 'km' ? 'ប្រព័ន្ធគ្រប់គ្រង IP អនុញ្ញាត' : 'Authorized IP Whitelist Engine'}
                 </span>
                 <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
                   {networkSettings.enforceMode} Policy
                 </span>
               </div>
               <h2 className="text-2xl font-bold tracking-tight text-white">
-                {language === 'km' ? 'ប្រព័ន្ធគ្រប់គ្រង Wi-Fi និង IP អនុញ្ញាតសម្រាប់វត្តមាន' : 'Seamless Attendance Wi-Fi & IP Access Control'}
+                {language === 'km' ? 'ការគ្រប់គ្រង IP អនុញ្ញាតសម្រាប់កត់ត្រាវត្តមាន' : 'Attendance Specific IP Whitelist & Access Control'}
               </h2>
               <p className="text-teal-100/80 text-sm max-w-2xl leading-relaxed">
                 {language === 'km'
-                  ? 'អនុញ្ញាតឱ្យបុគ្គលិកកត់ត្រាវត្តមានដោយស្វ័យប្រវត្តិតាមរយៈបណ្តាញ Wi-Fi សហគ្រាស និង IP ដែលបានអនុញ្ញាត ដោយមិនចាំបាច់មាន GPS ឡើយ។'
-                  : 'Allows employees to seamlessly check in and out via authorized workplace Wi-Fi connections and whitelisted IP subnets with zero interruptions.'}
+                  ? 'អនុញ្ញាតឱ្យបុគ្គលិកកត់ត្រាវត្តមានចូល និងចេញ (Check In / Check Out) តាមរយៈអាសយដ្ឋាន IP ជាក់លាក់ជាច្រើន និងបណ្តាញរងការិយាល័យ ដោយគ្មានការតាមដាន GPS ឡើយ។'
+                  : 'Allows employees to seamlessly check in and check out via multiple authorized specific IP addresses and office subnets with full data privacy.'}
               </p>
             </div>
 
-            {/* Simulated Live Connection Pill */}
-            <div className="bg-slate-800/80 backdrop-blur-md rounded-xl p-4 border border-teal-500/30 shadow-inner flex flex-col gap-2 min-w-[280px]">
+            {/* Live Connection Pill & IP Tester Switcher */}
+            <div className="bg-slate-800/90 backdrop-blur-md rounded-xl p-4 border border-teal-500/30 shadow-inner flex flex-col gap-2 min-w-[300px]">
               <div className="flex items-center justify-between text-xs text-slate-300">
                 <span className="flex items-center gap-1.5 font-medium">
                   <Radio className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
-                  {language === 'km' ? 'ការតភ្ជាប់បច្ចុប្បន្ន' : 'Your Live Network State'}
+                  {language === 'km' ? 'IP ការតភ្ជាប់បច្ចុប្បន្ន' : 'Current Client IP'}
                 </span>
                 <span
-                  className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${
+                  className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
                     currentConnection.isWhitelisted
-                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                      : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                      ? 'bg-teal-500/20 text-teal-300 border border-teal-400/30'
+                      : 'bg-amber-500/20 text-amber-300 border border-amber-400/30'
                   }`}
                 >
-                  {currentConnection.isWhitelisted ? 'Whitelisted' : 'External'}
+                  {currentConnection.isWhitelisted
+                    ? language === 'km' ? 'IP អនុញ្ញាត' : 'Whitelisted IP'
+                    : language === 'km' ? 'IP ក្រៅ' : 'External IP'}
                 </span>
               </div>
 
-              <div className="text-sm font-semibold text-white truncate">
-                {currentConnection.ssid}
+              <div className="text-sm font-semibold text-white truncate flex items-center gap-2">
+                <Globe className="w-4 h-4 text-teal-400 shrink-0" />
+                <span className="font-mono text-base font-bold text-teal-300">{currentConnection.clientIp}</span>
               </div>
-              <div className="flex items-center justify-between text-xs text-slate-300">
-                <span className="font-mono">{currentConnection.clientIp}</span>
-                <span>{currentConnection.latencyMs}ms latency</span>
+              <div className="text-xs text-slate-300">
+                <span>{currentConnection.networkName || 'Workplace Network'}</span>
               </div>
 
               {/* Simulation Selector */}
-              <div className="pt-2 border-t border-slate-700/60 mt-1 flex items-center justify-between gap-2">
-                <label htmlFor="test-network-simulator" className="text-[11px] text-slate-400 whitespace-nowrap">
-                  {language === 'km' ? 'សាកល្បងបណ្តាញ:' : 'Simulate Network:'}
-                </label>
-                <select
-                  id="test-network-simulator"
-                  value={currentConnection.networkId}
-                  onChange={e => handleSwitchSimulatedNetwork(e.target.value)}
-                  className="text-xs bg-slate-900/90 text-teal-200 border border-teal-500/40 rounded px-2 py-1 outline-none focus:ring-1 focus:ring-teal-400 cursor-pointer"
-                >
-                  {db.getSimulatedConnectionProfiles().map(prof => (
-                    <option key={prof.networkId} value={prof.networkId}>
-                      {prof.ssid} ({prof.connectionType})
-                    </option>
-                  ))}
-                </select>
+              <div className="pt-2 border-t border-slate-700/60 mt-1 space-y-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <label htmlFor="test-network-simulator" className="text-[11px] text-slate-400 whitespace-nowrap">
+                    {language === 'km' ? 'តេស្តប្តូរ IP:' : 'Simulate IP:'}
+                  </label>
+                  <select
+                    id="test-network-simulator"
+                    value={currentConnection.networkId}
+                    onChange={e => handleSwitchSimulatedNetwork(e.target.value)}
+                    className="text-xs bg-slate-900 text-teal-200 border border-teal-500/40 rounded px-2 py-1 outline-none focus:ring-1 focus:ring-teal-400 cursor-pointer max-w-[200px] truncate"
+                  >
+                    {db.getSimulatedConnectionProfiles().map(prof => (
+                      <option key={prof.networkId} value={prof.networkId}>
+                        {prof.clientIp} ({prof.connectionType})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Custom IP switch */}
+                <div className="flex items-center gap-1.5 pt-1">
+                  <input
+                    type="text"
+                    placeholder="Enter custom IP (e.g. 192.168.1.88)"
+                    value={customSimIp}
+                    onChange={e => setCustomSimIp(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && handleApplyCustomSimulatedIp()}
+                    className="w-full text-xs font-mono bg-slate-900/90 text-white placeholder-slate-500 border border-slate-700 rounded px-2 py-1 outline-none focus:border-teal-400"
+                  />
+                  <button
+                    onClick={handleApplyCustomSimulatedIp}
+                    className="px-2 py-1 bg-teal-600 hover:bg-teal-500 text-white text-[11px] font-semibold rounded whitespace-nowrap"
+                  >
+                    Set IP
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -332,17 +431,17 @@ export const NetworkWhitelistView: React.FC<NetworkWhitelistViewProps> = ({
           {/* Quick Metrics Bar */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-6 pt-6 border-t border-teal-700/30">
             <div className="bg-slate-900/40 rounded-xl p-3 border border-teal-500/20">
-              <div className="text-xs text-teal-300/80">{language === 'km' ? 'បណ្តាញសកម្ម' : 'Active Wi-Fi Networks'}</div>
-              <div className="text-xl font-bold text-white mt-0.5">{activeNetworksCount} Networks</div>
+              <div className="text-xs text-teal-300/80">{language === 'km' ? 'IP ជាក់លាក់អនុញ្ញាត' : 'Allowed Specific IPs'}</div>
+              <div className="text-xl font-bold text-white mt-0.5">{allowedSpecificIps.length} Specific IPs</div>
             </div>
             <div className="bg-slate-900/40 rounded-xl p-3 border border-teal-500/20">
-              <div className="text-xs text-teal-300/80">{language === 'km' ? 'ឧបករណ៍តភ្ជាប់' : 'Active Connected Devices'}</div>
-              <div className="text-xl font-bold text-white mt-0.5">{totalConnectedDevices} Devices</div>
+              <div className="text-xs text-teal-300/80">{language === 'km' ? 'បណ្តាញរង Subnet' : 'Authorized Subnets'}</div>
+              <div className="text-xl font-bold text-white mt-0.5">{activeNetworksCount} Subnets</div>
             </div>
             <div className="bg-slate-900/40 rounded-xl p-3 border border-teal-500/20">
-              <div className="text-xs text-teal-300/80">{language === 'km' ? 'ច្រកទ្វារ & Firewall' : 'Firewall Status'}</div>
+              <div className="text-xs text-teal-300/80">{language === 'km' ? 'ស្ថានភាព Firewall' : 'Firewall Status'}</div>
               <div className="text-xl font-bold text-emerald-400 mt-0.5 flex items-center gap-1.5">
-                <ShieldCheck className="w-5 h-5" /> Configured
+                <ShieldCheck className="w-5 h-5" /> Active
               </div>
             </div>
             <div className="bg-slate-900/40 rounded-xl p-3 border border-teal-500/20">
@@ -355,7 +454,7 @@ export const NetworkWhitelistView: React.FC<NetworkWhitelistViewProps> = ({
         </div>
       </div>
 
-      {/* Navigation Sub-Tabs corresponding to user steps */}
+      {/* Navigation Sub-Tabs */}
       <div className="flex border-b border-slate-200 dark:border-slate-800 space-x-1 sm:space-x-2 overflow-x-auto pb-0.5">
         <button
           id="tab-btn-whitelist"
@@ -366,10 +465,10 @@ export const NetworkWhitelistView: React.FC<NetworkWhitelistViewProps> = ({
               : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
           }`}
         >
-          <Wifi className="w-4 h-4" />
-          <span>1. {language === 'km' ? 'បញ្ជី Wi-Fi & IP អនុញ្ញាត' : 'Whitelist IP Addresses'}</span>
+          <Globe className="w-4 h-4" />
+          <span>1. {language === 'km' ? 'បញ្ជី IP ជាក់លាក់ & បណ្តាញរង' : 'Allowed Specific IPs & Subnets'}</span>
           <span className="ml-1 px-1.5 py-0.2 text-[11px] font-bold rounded-full bg-teal-100 dark:bg-teal-900/60 text-teal-800 dark:text-teal-300">
-            {networks.length}
+            {allowedSpecificIps.length + networks.length}
           </span>
         </button>
 
@@ -383,7 +482,7 @@ export const NetworkWhitelistView: React.FC<NetworkWhitelistViewProps> = ({
           }`}
         >
           <Sliders className="w-4 h-4" />
-          <span>2. {language === 'km' ? 'កំណត់រចនាសម្ព័ន្ធបណ្តាញ' : 'Configure Network Settings'}</span>
+          <span>2. {language === 'km' ? 'កំណត់រចនាសម្ព័ន្ធគោលការណ៍ IP' : 'Configure IP Policies'}</span>
         </button>
 
         <button
@@ -416,45 +515,157 @@ export const NetworkWhitelistView: React.FC<NetworkWhitelistViewProps> = ({
         </button>
       </div>
 
-      {/* SUB-TAB 1: WHITELIST IP ADDRESSES & WORKPLACE WI-FI */}
+      {/* SUB-TAB 1: MULTI SPECIFIC IP WHITELIST & SUBNET PROFILES */}
       {activeSubTab === 'whitelist' && (
         <div className="space-y-6">
-          {/* Action Bar */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
-            <div className="flex-1">
-              <h3 className="text-base font-semibold text-slate-900 dark:text-white flex items-center gap-2">
-                <Wifi className="w-4 h-4 text-teal-600" />
-                {language === 'km' ? 'បណ្តាញ Wi-Fi និងបណ្តាញរង IP កន្លែងធ្វើការ' : 'Workplace Wi-Fi Networks & IP Subnets'}
-              </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                {language === 'km'
-                  ? 'កំណត់ត្រា Wi-Fi SSID និងអាសយដ្ឋាន IP CIDR ដែលអនុញ្ញាតឱ្យបុគ្គលិកកត់ត្រាវត្តមានដោយរលូន'
-                  : 'Registered Wi-Fi SSIDs and CIDR IP pools authorized for frictionless workplace attendance.'}
-              </p>
-            </div>
+          {/* SECTION 1: DEDICATED MULTI-SPECIFIC IP WHITELIST FOR CHECK-IN / CHECKOUT */}
+          <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-teal-200/80 dark:border-teal-900/60 shadow-sm space-y-5">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-800 pb-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="w-8 h-8 rounded-lg bg-teal-100 dark:bg-teal-950 text-teal-700 dark:text-teal-300 flex items-center justify-center font-bold">
+                    <Globe className="w-4 h-4" />
+                  </span>
+                  <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                    {language === 'km'
+                      ? 'អនុញ្ញាតអាសយដ្ឋាន IP ជាក់លាក់ជាច្រើនសម្រាប់កត់ត្រាវត្តមាន (Check In / Check Out)'
+                      : 'Authorized Specific IP Addresses for Check-In & Check-Out'}
+                  </h3>
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-2xl">
+                  {language === 'km'
+                    ? 'បញ្ចូលអាសយដ្ឋាន IP ជាក់លាក់មួយ ឬច្រើន (រាយនាមដោយសញ្ញាក្បៀស ,)។ ឧបករណ៍ដែលមាន IP ទាំងនេះអាចកត់ត្រាចូល និងចេញបានភ្លាមៗ។'
+                    : 'Specify exact individual IP addresses allowed to check in and check out. Employees or kiosk devices on any of these IPs will be verified automatically.'}
+                </p>
+              </div>
 
-            <div className="flex items-center gap-3">
               {isSuperOrAdmin && (
                 <button
-                  id="btn-add-workplace-network"
-                  onClick={() => handleOpenAddModal()}
-                  className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white text-sm font-medium rounded-lg shadow-sm hover:shadow transition flex items-center gap-2"
+                  onClick={handleWhitelistCurrentClientIp}
+                  className="px-3 py-2 bg-teal-50 dark:bg-teal-950/60 hover:bg-teal-100 dark:hover:bg-teal-900 text-teal-800 dark:text-teal-200 border border-teal-300 dark:border-teal-800 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition shrink-0"
+                >
+                  <Plus className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />
+                  <span>{language === 'km' ? 'បន្ថែម IP បច្ចុប្បន្នរបស់ខ្ញុំ' : 'Whitelist My Current IP'} ({currentConnection.clientIp})</span>
+                </button>
+              )}
+            </div>
+
+            {/* Specific IP Feedback Notification */}
+            {specificIpFeedback && (
+              <div
+                className={`p-3 rounded-lg text-xs font-medium flex items-center gap-2 ${
+                  specificIpFeedback.type === 'success'
+                    ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                    : 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
+                }`}
+              >
+                {specificIpFeedback.type === 'success' ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                ) : (
+                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                )}
+                <span>{specificIpFeedback.message}</span>
+              </div>
+            )}
+
+            {/* Input Form for adding multiple specific IPs */}
+            {isSuperOrAdmin && (
+              <form onSubmit={handleAddSpecificIps} className="flex flex-col sm:flex-row gap-2.5">
+                <div className="relative flex-1">
+                  <Globe className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                  <input
+                    id="input-multi-specific-ips"
+                    type="text"
+                    placeholder="Enter one or multiple specific IPs (e.g. 192.168.1.45, 192.168.1.88, 203.0.113.10)..."
+                    value={newSpecificIpInput}
+                    onChange={e => setNewSpecificIpInput(e.target.value)}
+                    className="w-full pl-9 pr-4 py-2 text-xs sm:text-sm font-mono bg-slate-50 dark:bg-slate-800/80 border border-slate-300 dark:border-slate-700 rounded-lg outline-none focus:border-teal-500 text-slate-900 dark:text-white"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white text-xs sm:text-sm font-semibold rounded-lg shadow-sm transition flex items-center justify-center gap-2 shrink-0"
                 >
                   <Plus className="w-4 h-4" />
-                  <span>{language === 'km' ? 'បន្ថែម Wi-Fi / IP' : 'Add Wi-Fi / IP Subnet'}</span>
+                  <span>{language === 'km' ? 'បន្ថែម IP ជាក់លាក់' : 'Add Specific IP(s)'}</span>
                 </button>
+              </form>
+            )}
+
+            {/* List of Allowed Specific IPs */}
+            <div className="space-y-2 pt-2">
+              <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+                <span className="font-semibold uppercase tracking-wider text-[11px]">
+                  {language === 'km' ? 'បញ្ជី IP ជាក់លាក់ដែលបានអនុញ្ញាត:' : 'Currently Whitelisted Specific IPs:'}
+                </span>
+                <span>{allowedSpecificIps.length} active authorized IP address{allowedSpecificIps.length !== 1 ? 'es' : ''}</span>
+              </div>
+
+              {allowedSpecificIps.length === 0 ? (
+                <div className="p-4 bg-slate-50 dark:bg-slate-800/40 rounded-xl text-center text-xs text-slate-500 dark:text-slate-400">
+                  No specific IP addresses added yet. Enter IP addresses above or click "Whitelist My Current IP".
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
+                  {allowedSpecificIps.map(ip => {
+                    const isCurrent = currentConnection.clientIp === ip;
+                    return (
+                      <div
+                        key={ip}
+                        className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl border transition ${
+                          isCurrent
+                            ? 'bg-teal-50/80 dark:bg-teal-950/40 border-teal-300 dark:border-teal-800'
+                            : 'bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700/80'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 truncate">
+                          <Globe className={`w-3.5 h-3.5 shrink-0 ${isCurrent ? 'text-teal-600 dark:text-teal-400' : 'text-slate-400'}`} />
+                          <span className="font-mono text-xs font-bold text-slate-800 dark:text-slate-200 truncate">{ip}</span>
+                          {isCurrent && (
+                            <span className="px-1.5 py-0.2 rounded bg-teal-200 dark:bg-teal-900 text-teal-900 dark:text-teal-200 text-[10px] font-bold">
+                              Current
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-1 shrink-0 ml-2">
+                          <button
+                            onClick={() => {
+                              const updated = db.setCustomClientIp(ip);
+                              setCurrentConnection(updated);
+                              refreshState();
+                            }}
+                            className="text-[10px] px-2 py-0.5 rounded bg-slate-200 dark:bg-slate-700 hover:bg-teal-600 hover:text-white text-slate-700 dark:text-slate-200 transition"
+                            title="Test attendance check-in from this IP"
+                          >
+                            Simulate
+                          </button>
+                          {isSuperOrAdmin && (
+                            <button
+                              onClick={() => handleRemoveSpecificIp(ip)}
+                              className="p-1 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 transition"
+                              title="Remove specific IP from whitelist"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               )}
             </div>
           </div>
 
-          {/* IP Whitelist Live Tester Utility */}
-          <div className="bg-slate-50 dark:bg-slate-900/60 p-4 rounded-xl border border-slate-200 dark:border-slate-800 space-y-3">
+          {/* SECTION 2: IP WHITELIST LIVE TESTER & VALIDATOR */}
+          <div className="bg-slate-50 dark:bg-slate-900/60 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3">
             <div className="flex items-center justify-between">
               <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-2">
                 <Cpu className="w-4 h-4 text-teal-600" />
-                {language === 'km' ? 'ឧបករណ៍សាកល្បងអាសយដ្ឋាន IP (Subnet CIDR Checker)' : 'Instant IP Whitelist & Subnet Validator'}
+                {language === 'km' ? 'ឧបករណ៍សាកល្បងអាសយដ្ឋាន IP សម្រាប់ Check-In' : 'Live IP Validator for Check-In & Check-Out'}
               </h4>
-              <span className="text-xs text-slate-500">Supports IPv4 CIDR (e.g. 192.168.1.0/24)</span>
+              <span className="text-xs text-slate-500">Supports Specific IPv4 & CIDR Subnets</span>
             </div>
 
             <div className="flex flex-col sm:flex-row gap-2">
@@ -487,9 +698,9 @@ export const NetworkWhitelistView: React.FC<NetworkWhitelistViewProps> = ({
                     handleTestIp('192.168.1.45');
                   }}
                   className="px-2.5 py-2 text-xs bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-300 dark:hover:bg-slate-700 transition"
-                  title="Test HQ IP"
+                  title="Test Specific IP"
                 >
-                  HQ IP
+                  Specific IP
                 </button>
 
                 <button
@@ -518,7 +729,7 @@ export const NetworkWhitelistView: React.FC<NetworkWhitelistViewProps> = ({
 
             {testResult && (
               <div
-                className={`p-3 rounded-lg text-sm border flex items-start gap-3 transition-all ${
+                className={`p-3.5 rounded-lg text-sm border flex items-start gap-3 transition-all ${
                   testResult.isWhitelisted
                     ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-900 dark:text-emerald-200 border-emerald-200 dark:border-emerald-800/50'
                     : 'bg-amber-50 dark:bg-amber-950/30 text-amber-900 dark:text-amber-200 border-amber-200 dark:border-amber-800/50'
@@ -529,146 +740,199 @@ export const NetworkWhitelistView: React.FC<NetworkWhitelistViewProps> = ({
                 ) : (
                   <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
                 )}
-                <div>
+                <div className="flex-1">
                   <div className="font-semibold">
                     {testResult.isWhitelisted
-                      ? 'IP Whitelisted — Seamless Check-In Eligible'
-                      : 'IP Not in Workplace Whitelist'}
+                      ? 'IP Whitelisted — Authorized for Check-In & Check-Out'
+                      : 'IP Not Authorized — External / Remote IP'}
                   </div>
                   <div className="text-xs mt-0.5 opacity-90">{testResult.reason}</div>
+                  {testResult.matchedIp && (
+                    <div className="text-xs font-mono mt-1 text-teal-800 dark:text-teal-300">
+                      Matched Specific Authorized IP: <strong>{testResult.matchedIp}</strong>
+                    </div>
+                  )}
                   {testResult.matchedNetwork && (
                     <div className="text-xs font-mono mt-1 text-teal-800 dark:text-teal-300">
-                      Matched Network: {testResult.matchedNetwork.name} ({testResult.matchedNetwork.ssid}) • Gateway: {testResult.matchedNetwork.gatewayIp}
+                      Matched Network Subnet: {testResult.matchedNetwork.name} • Gateway: {testResult.matchedNetwork.gatewayIp}
                     </div>
+                  )}
+
+                  {!testResult.isWhitelisted && isSuperOrAdmin && (
+                    <button
+                      onClick={() => {
+                        db.addAllowedSpecificIp(testIpInput.trim());
+                        refreshState();
+                        handleTestIp(testIpInput.trim());
+                      }}
+                      className="mt-2 text-xs font-semibold px-2.5 py-1 bg-teal-600 text-white rounded hover:bg-teal-700 transition inline-flex items-center gap-1"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Whitelist This IP Address ({testIpInput})</span>
+                    </button>
                   )}
                 </div>
               </div>
             )}
           </div>
 
-          {/* Network Cards Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {networks.map(net => (
-              <div
-                key={net.id}
-                id={`network-card-${net.id}`}
-                className={`rounded-xl border transition-all p-5 flex flex-col justify-between bg-white dark:bg-slate-900 ${
-                  net.status === 'Active'
-                    ? 'border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md'
-                    : 'border-slate-200 dark:border-slate-800 opacity-60 bg-slate-50 dark:bg-slate-950'
-                }`}
-              >
-                <div className="space-y-3">
-                  {/* Header */}
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-center gap-2.5">
-                      <div
-                        className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                          net.securityType.includes('VPN')
-                            ? 'bg-purple-100 dark:bg-purple-950/50 text-purple-600 dark:text-purple-400'
-                            : 'bg-teal-100 dark:bg-teal-950/50 text-teal-600 dark:text-teal-400'
-                        }`}
-                      >
-                        {net.securityType.includes('VPN') ? (
-                          <Lock className="w-5 h-5" />
-                        ) : (
-                          <Wifi className="w-5 h-5" />
-                        )}
-                      </div>
-                      <div>
-                        <h4 className="text-sm font-bold text-slate-900 dark:text-white leading-snug">
-                          {language === 'km' && net.nameKm ? net.nameKm : net.name}
-                        </h4>
-                        <div className="text-xs font-mono text-teal-600 dark:text-teal-400 font-medium">
-                          SSID: {net.ssid}
+          {/* SECTION 3: WORKPLACE SUBNETS & NETWORK BLOCKS */}
+          <div className="space-y-4">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+              <div className="flex-1">
+                <h3 className="text-base font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                  <Layers className="w-4 h-4 text-teal-600" />
+                  {language === 'km' ? 'បណ្តាញរង និងច្រកទ្វារ IP ការិយាល័យ' : 'Workplace Subnets & Regional Office Gateways'}
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  {language === 'km'
+                    ? 'កំណត់ត្រាបណ្តាញរង IP CIDR និង Gateway ដែលអនុញ្ញាតឱ្យបុគ្គលិកកត់ត្រាវត្តមាន'
+                    : 'Registered CIDR IP blocks and branch gateways authorized for frictionless workplace attendance.'}
+                </p>
+              </div>
+
+              <div className="flex items-center gap-3">
+                {isSuperOrAdmin && (
+                  <button
+                    id="btn-add-workplace-network"
+                    onClick={() => handleOpenAddModal()}
+                    className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white text-sm font-medium rounded-lg shadow-sm hover:shadow transition flex items-center gap-2"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>{language === 'km' ? 'បន្ថែមបណ្តាញរង IP' : 'Add IP Subnet'}</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Subnet Cards Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+              {networks.map(net => (
+                <div
+                  key={net.id}
+                  id={`network-card-${net.id}`}
+                  className={`rounded-xl border transition-all p-5 flex flex-col justify-between bg-white dark:bg-slate-900 ${
+                    net.status === 'Active'
+                      ? 'border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md'
+                      : 'border-slate-200 dark:border-slate-800 opacity-60 bg-slate-50 dark:bg-slate-950'
+                  }`}
+                >
+                  <div className="space-y-3">
+                    {/* Header */}
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2.5">
+                        <div
+                          className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                            net.securityType.includes('VPN')
+                              ? 'bg-purple-100 dark:bg-purple-950/50 text-purple-600 dark:text-purple-400'
+                              : 'bg-teal-100 dark:bg-teal-950/50 text-teal-600 dark:text-teal-400'
+                          }`}
+                        >
+                          {net.securityType.includes('VPN') ? (
+                            <Lock className="w-5 h-5" />
+                          ) : (
+                            <Globe className="w-5 h-5" />
+                          )}
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-bold text-slate-900 dark:text-white leading-snug">
+                            {language === 'km' && net.nameKm ? net.nameKm : net.name}
+                          </h4>
+                          <div className="text-xs font-mono text-teal-600 dark:text-teal-400 font-medium">
+                            Gateway: {net.gatewayIp}
+                          </div>
                         </div>
                       </div>
-                    </div>
 
-                    <span
-                      className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
-                        net.status === 'Active'
-                          ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-300'
-                          : net.status === 'Under Maintenance'
-                          ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300'
-                          : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-400'
-                      }`}
-                    >
-                      {net.status}
-                    </span>
-                  </div>
-
-                  <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2">
-                    {language === 'km' && net.descriptionKm ? net.descriptionKm : net.description}
-                  </p>
-
-                  {/* Network Details */}
-                  <div className="bg-slate-50 dark:bg-slate-800/60 rounded-lg p-3 space-y-2 text-xs">
-                    <div className="flex items-center justify-between">
-                      <span className="text-slate-500 dark:text-slate-400">Whitelisted Subnets:</span>
-                      <span className="font-mono font-medium text-slate-800 dark:text-slate-200 text-right truncate max-w-[180px]">
-                        {net.ipRanges.join(', ')}
+                      <span
+                        className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                          net.status === 'Active'
+                            ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-300'
+                            : net.status === 'Under Maintenance'
+                            ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300'
+                            : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-400'
+                        }`}
+                      >
+                        {net.status}
                       </span>
                     </div>
 
-                    <div className="flex items-center justify-between">
-                      <span className="text-slate-500 dark:text-slate-400">Gateway IP:</span>
-                      <span className="font-mono text-slate-700 dark:text-slate-300">{net.gatewayIp}</span>
-                    </div>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2">
+                      {language === 'km' && net.descriptionKm ? net.descriptionKm : net.description}
+                    </p>
 
-                    <div className="flex items-center justify-between">
-                      <span className="text-slate-500 dark:text-slate-400">Location / Campus:</span>
-                      <span className="text-slate-700 dark:text-slate-300 truncate max-w-[170px]">{net.locationName}</span>
-                    </div>
+                    {/* Network Details */}
+                    <div className="bg-slate-50 dark:bg-slate-800/60 rounded-lg p-3 space-y-2 text-xs">
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-500 dark:text-slate-400">Whitelisted CIDR Subnets:</span>
+                        <span className="font-mono font-medium text-slate-800 dark:text-slate-200 text-right truncate max-w-[180px]">
+                          {net.ipRanges.join(', ')}
+                        </span>
+                      </div>
 
-                    <div className="flex items-center justify-between">
-                      <span className="text-slate-500 dark:text-slate-400">Security:</span>
-                      <span className="text-slate-700 dark:text-slate-300">{net.securityType}</span>
-                    </div>
+                      {net.allowedSpecificIps && net.allowedSpecificIps.length > 0 && (
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-500 dark:text-slate-400">Specific IPs:</span>
+                          <span className="font-mono font-medium text-teal-700 dark:text-teal-300 text-right truncate max-w-[180px]">
+                            {net.allowedSpecificIps.join(', ')}
+                          </span>
+                        </div>
+                      )}
 
-                    <div className="flex items-center justify-between pt-1 border-t border-slate-200 dark:border-slate-700/60">
-                      <span className="text-slate-500 dark:text-slate-400">Connected Devices:</span>
-                      <span className="font-semibold text-teal-600 dark:text-teal-400">
-                        {net.connectedDevicesCount} devices active
-                      </span>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-500 dark:text-slate-400">Location / Campus:</span>
+                        <span className="text-slate-700 dark:text-slate-300 truncate max-w-[170px]">{net.locationName}</span>
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-500 dark:text-slate-400">Security Type:</span>
+                        <span className="text-slate-700 dark:text-slate-300">{net.securityType}</span>
+                      </div>
+
+                      <div className="flex items-center justify-between pt-1 border-t border-slate-200 dark:border-slate-700/60">
+                        <span className="text-slate-500 dark:text-slate-400">Connected Devices:</span>
+                        <span className="font-semibold text-teal-600 dark:text-teal-400">
+                          {net.connectedDevicesCount} devices active
+                        </span>
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                {/* Footer Controls */}
-                <div className="pt-4 mt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-1.5 text-xs text-slate-500">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
-                    <span>Seamless 1-Tap</span>
-                  </div>
-
-                  {isSuperOrAdmin && (
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => handleToggleNetworkStatus(net)}
-                        className="px-2 py-1 text-xs rounded border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition"
-                      >
-                        {net.status === 'Active' ? 'Disable' : 'Enable'}
-                      </button>
-                      <button
-                        onClick={() => handleOpenAddModal(net)}
-                        className="p-1 text-slate-500 hover:text-slate-900 dark:hover:text-white rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition"
-                        title="Edit configuration"
-                      >
-                        <Edit2 className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteNetwork(net.id, net.name)}
-                        className="p-1 text-rose-500 hover:text-rose-700 rounded hover:bg-rose-50 dark:hover:bg-rose-950/30 transition"
-                        title="Delete from whitelist"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                  {/* Footer Controls */}
+                  <div className="pt-4 mt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                      <span>Seamless 1-Tap</span>
                     </div>
-                  )}
+
+                    {isSuperOrAdmin && (
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => handleToggleNetworkStatus(net)}
+                          className="px-2 py-1 text-xs rounded border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition"
+                        >
+                          {net.status === 'Active' ? 'Disable' : 'Enable'}
+                        </button>
+                        <button
+                          onClick={() => handleOpenAddModal(net)}
+                          className="p-1 text-slate-500 hover:text-slate-900 dark:hover:text-white rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                          title="Edit configuration"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteNetwork(net.id, net.name)}
+                          className="p-1 text-rose-500 hover:text-rose-700 rounded hover:bg-rose-50 dark:hover:bg-rose-950/30 transition"
+                          title="Delete from whitelist"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         </div>
       )}
@@ -680,12 +944,12 @@ export const NetworkWhitelistView: React.FC<NetworkWhitelistViewProps> = ({
             <div className="border-b border-slate-200 dark:border-slate-800 pb-4">
               <h3 className="text-base font-semibold text-slate-900 dark:text-white flex items-center gap-2">
                 <Sliders className="w-5 h-5 text-teal-600" />
-                {language === 'km' ? 'ការកំណត់រចនាសម្ព័ន្ធបណ្តាញ និងក្បួន Firewall' : 'Firewall & Network Access Policies'}
+                {language === 'km' ? 'ការកំណត់រចនាសម្ព័ន្ធគោលការណ៍ IP និង Firewall' : 'Firewall & IP Access Policies'}
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                 {language === 'km'
-                  ? 'កំណត់ការអនុវត្តគោលការណ៍កត់ត្រាវត្តមាន ច្រកទ្វារ Ports និងការឆ្លងកាត់ Captive Portal'
-                  : 'Configure network permissions, port access, captive portal bypass, and whitelist enforcement behavior.'}
+                  ? 'កំណត់ការអនុវត្តគោលការណ៍កត់ត្រាវត្តមាន ច្រកទ្វារ Ports និងការឆ្លងកាត់ការផ្ទៀងផ្ទាត់ IP'
+                  : 'Configure IP enforcement rules, authorized ports, captive portal bypass, and attendance security policies.'}
               </p>
             </div>
 
@@ -699,7 +963,7 @@ export const NetworkWhitelistView: React.FC<NetworkWhitelistViewProps> = ({
             {/* Policy Enforcement Mode */}
             <div className="space-y-3">
               <label className="text-sm font-semibold text-slate-900 dark:text-white block">
-                {language === 'km' ? 'កម្រិតតឹងរ៉ឹងនៃការអនុវត្តបញ្ជី Wi-Fi' : 'Network Whitelist Enforcement Policy'}
+                {language === 'km' ? 'កម្រិតតឹងរ៉ឹងនៃការអនុវត្តបញ្ជី IP' : 'IP Whitelist Enforcement Policy'}
               </label>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -722,7 +986,7 @@ export const NetworkWhitelistView: React.FC<NetworkWhitelistViewProps> = ({
                     />
                   </div>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 leading-relaxed">
-                    Workplace Wi-Fi enables 1-tap seamless check-in. Remote or field staff can still check in with Zero-Tracking or standard badges.
+                    Authorized specific IPs and subnets enable 1-tap seamless check-in. Remote staff can still self-attest or use Zero-Tracking mode.
                   </p>
                 </div>
 
@@ -735,7 +999,7 @@ export const NetworkWhitelistView: React.FC<NetworkWhitelistViewProps> = ({
                   }`}
                 >
                   <div className="flex items-center justify-between">
-                    <span className="font-semibold text-sm text-slate-900 dark:text-white">Strict (On-Premises Only)</span>
+                    <span className="font-semibold text-sm text-slate-900 dark:text-white">Strict (Authorized IPs Only)</span>
                     <input
                       type="radio"
                       name="enforceMode"
@@ -745,7 +1009,7 @@ export const NetworkWhitelistView: React.FC<NetworkWhitelistViewProps> = ({
                     />
                   </div>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 leading-relaxed">
-                    Enforces attendance ONLY from whitelisted workplace Wi-Fi or Corporate VPN subnets. Blocks unauthorized external IPs.
+                    Enforces attendance ONLY from whitelisted specific IP addresses or authorized office subnets. Blocks unrecognized external IPs.
                   </p>
                 </div>
 
@@ -768,7 +1032,7 @@ export const NetworkWhitelistView: React.FC<NetworkWhitelistViewProps> = ({
                     />
                   </div>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 leading-relaxed">
-                    Allows check-ins from any connection, but flags non-whitelisted IPs in network telemetry logs for IT review.
+                    Allows check-ins from any connection, but flags non-whitelisted IPs in access telemetry logs for administrator review.
                   </p>
                 </div>
               </div>
@@ -792,29 +1056,10 @@ export const NetworkWhitelistView: React.FC<NetworkWhitelistViewProps> = ({
                   />
                   <div>
                     <span className="text-sm font-medium text-slate-900 dark:text-white block">
-                      Enable 1-Tap Seamless Check-In
+                      Enable 1-Tap Seamless Check-In on Whitelisted IPs
                     </span>
                     <span className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed block mt-0.5">
-                      Automatically recognizes employees on authorized Wi-Fi and bypasses manual verification prompts.
-                    </span>
-                  </div>
-                </label>
-
-                <label className="flex items-start gap-3 p-3.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={networkSettings.captivePortalAutoBypass}
-                    onChange={e =>
-                      setNetworkSettings(prev => ({ ...prev, captivePortalAutoBypass: e.target.checked }))
-                    }
-                    className="mt-1 rounded text-teal-600 focus:ring-teal-500"
-                  />
-                  <div>
-                    <span className="text-sm font-medium text-slate-900 dark:text-white block">
-                      Captive Portal Walled Garden Bypass
-                    </span>
-                    <span className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed block mt-0.5">
-                      Whitelists attendance web service endpoints so clock-in functions even before web portal login redirects.
+                      Automatically recognizes employees on authorized specific IPs or subnets and streamlines verification.
                     </span>
                   </div>
                 </label>
@@ -841,25 +1086,6 @@ export const NetworkWhitelistView: React.FC<NetworkWhitelistViewProps> = ({
                 <label className="flex items-start gap-3 p-3.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 cursor-pointer">
                   <input
                     type="checkbox"
-                    checked={networkSettings.sslTlsInspectionBypass}
-                    onChange={e =>
-                      setNetworkSettings(prev => ({ ...prev, sslTlsInspectionBypass: e.target.checked }))
-                    }
-                    className="mt-1 rounded text-teal-600 focus:ring-teal-500"
-                  />
-                  <div>
-                    <span className="text-sm font-medium text-slate-900 dark:text-white block">
-                      SSL/TLS Deep Packet Inspection Bypass
-                    </span>
-                    <span className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed block mt-0.5">
-                      Prevents certificate pinning conflicts on mobile devices checking in on corporate Wi-Fi.
-                    </span>
-                  </div>
-                </label>
-
-                <label className="flex items-start gap-3 p-3.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 cursor-pointer">
-                  <input
-                    type="checkbox"
                     checked={networkSettings.rateLimitExemption}
                     onChange={e =>
                       setNetworkSettings(prev => ({ ...prev, rateLimitExemption: e.target.checked }))
@@ -871,7 +1097,7 @@ export const NetworkWhitelistView: React.FC<NetworkWhitelistViewProps> = ({
                       Morning Clock-In Rate-Limit Exemption
                     </span>
                     <span className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed block mt-0.5">
-                      Exempts internal workplace Wi-Fi subnets from burst API throttles during 07:45 - 08:30 peak arrivals.
+                      Exempts authorized workplace IP addresses from burst API throttles during 07:45 - 08:30 peak arrivals.
                     </span>
                   </div>
                 </label>
@@ -879,18 +1105,18 @@ export const NetworkWhitelistView: React.FC<NetworkWhitelistViewProps> = ({
                 <label className="flex items-start gap-3 p-3.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 cursor-pointer">
                   <input
                     type="checkbox"
-                    checked={networkSettings.mDnsDiscovery}
+                    checked={networkSettings.sslTlsInspectionBypass}
                     onChange={e =>
-                      setNetworkSettings(prev => ({ ...prev, mDnsDiscovery: e.target.checked }))
+                      setNetworkSettings(prev => ({ ...prev, sslTlsInspectionBypass: e.target.checked }))
                     }
                     className="mt-1 rounded text-teal-600 focus:ring-teal-500"
                   />
                   <div>
                     <span className="text-sm font-medium text-slate-900 dark:text-white block">
-                      Local mDNS / Subnet Device Beaconing
+                      SSL/TLS Deep Packet Inspection Bypass
                     </span>
                     <span className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed block mt-0.5">
-                      Allows fast zero-configuration handshake with workplace kiosk terminals and web tablets.
+                      Prevents certificate pinning conflicts on devices checking in from authorized networks.
                     </span>
                   </div>
                 </label>
@@ -924,7 +1150,7 @@ export const NetworkWhitelistView: React.FC<NetworkWhitelistViewProps> = ({
                   className="px-5 py-2.5 bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold rounded-lg shadow-sm hover:shadow transition flex items-center gap-2"
                 >
                   <ShieldCheck className="w-4 h-4" />
-                  <span>{language === 'km' ? 'រក្សាទុកការកំណត់រចនាសម្ព័ន្ធ' : 'Save & Apply Network Policies'}</span>
+                  <span>{language === 'km' ? 'រក្សាទុកការកំណត់គោលការណ៍ IP' : 'Save & Apply IP Policies'}</span>
                 </button>
               </div>
             )}
@@ -941,12 +1167,12 @@ export const NetworkWhitelistView: React.FC<NetworkWhitelistViewProps> = ({
               <div>
                 <h3 className="text-base font-semibold text-slate-900 dark:text-white flex items-center gap-2">
                   <Bell className="w-5 h-5 text-teal-600" />
-                  {language === 'km' ? 'សេចក្តីណែនាំ និងការជូនដំណឹងដល់បុគ្គលិក' : 'Employee Wi-Fi Connection Guide & Policy'}
+                  {language === 'km' ? 'សេចក្តីណែនាំ និងការជូនដំណឹងដល់បុគ្គលិក' : 'Employee IP Access Guide & Attendance Policy'}
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                   {language === 'km'
-                    ? 'ផ្តល់ការណែនាំដល់បុគ្គលិកអំពីរបៀបតភ្ជាប់ Wi-Fi កន្លែងធ្វើការ ដើម្បីកត់ត្រាវត្តមានរហ័សដោយគ្មានការរំខាន'
-                    : 'Clear guidance and setup steps for staff to connect to authorized workplace Wi-Fi for seamless check-in.'}
+                    ? 'ផ្តល់ការណែនាំដល់បុគ្គលិកអំពីរបៀបកត់ត្រាវត្តមានតាមរយៈ IP អនុញ្ញាត ដោយគ្មានការតាមដានទីតាំង GPS ឡើយ'
+                    : 'Clear guidance and setup details explaining how attendance is verified via authorized workplace IPs without invasive GPS tracking.'}
                 </p>
               </div>
 
@@ -976,7 +1202,7 @@ export const NetworkWhitelistView: React.FC<NetworkWhitelistViewProps> = ({
             <div className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
               <h4 className="text-sm font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-2">
                 <Laptop className="w-4 h-4 text-teal-600" />
-                <span>How to Connect for Seamless Check-In</span>
+                <span>How IP Whitelisting Works for Check-In & Check-Out</span>
               </h4>
 
               <ol className="space-y-3.5 text-xs text-slate-600 dark:text-slate-300">
@@ -985,12 +1211,8 @@ export const NetworkWhitelistView: React.FC<NetworkWhitelistViewProps> = ({
                     1
                   </span>
                   <div>
-                    <strong className="text-slate-900 dark:text-white block">Select Corporate Wi-Fi</strong>
-                    When arriving at your designated office campus, open Wi-Fi settings and choose{' '}
-                    <code className="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 rounded font-mono text-teal-600 dark:text-teal-400">
-                      CORP-HQ-SECURE-5G
-                    </code>{' '}
-                    or your branch regional SSID.
+                    <strong className="text-slate-900 dark:text-white block">Connect from Workplace Static IP or Network</strong>
+                    When you are at an authorized company location or using an approved static IP, your device IP is recognized by the portal.
                   </div>
                 </li>
 
@@ -999,8 +1221,8 @@ export const NetworkWhitelistView: React.FC<NetworkWhitelistViewProps> = ({
                     2
                   </span>
                   <div>
-                    <strong className="text-slate-900 dark:text-white block">Authenticate via Enterprise Single Sign-On</strong>
-                    Use your employee username and security token. Devices with installed corporate profiles will authenticate automatically.
+                    <strong className="text-slate-900 dark:text-white block">Instant Whitelist Verification</strong>
+                    The system matches your current connection IP against the administrator-configured list of allowed specific IPs and subnets.
                   </div>
                 </li>
 
@@ -1009,8 +1231,8 @@ export const NetworkWhitelistView: React.FC<NetworkWhitelistViewProps> = ({
                     3
                   </span>
                   <div>
-                    <strong className="text-slate-900 dark:text-white block">Open Attendance & Clock In</strong>
-                    Once connected, open the portal. Your network status will show "Whitelisted (Seamless)" with a green badge, and you can clock in with 1 click.
+                    <strong className="text-slate-900 dark:text-white block">1-Tap Seamless Clock-In & Clock-Out</strong>
+                    Once recognized as an authorized IP, you can clock in and out with 1 tap, without filling manual exception forms.
                   </div>
                 </li>
 
@@ -1019,12 +1241,8 @@ export const NetworkWhitelistView: React.FC<NetworkWhitelistViewProps> = ({
                     4
                   </span>
                   <div>
-                    <strong className="text-slate-900 dark:text-white block">Remote Work & Travel Coverage</strong>
-                    If working from home or offsite, connect via{' '}
-                    <code className="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 rounded font-mono text-teal-600 dark:text-teal-400">
-                      Corporate VPN Tunnel
-                    </code>{' '}
-                    or use the authorized Zero-Tracking manual self-attestation option.
+                    <strong className="text-slate-900 dark:text-white block">Remote Work & Dedicated IP Requests</strong>
+                    If working from a remote office or dedicated branch line, contact your administrator to whitelist your static public IP address.
                   </div>
                 </li>
               </ol>
@@ -1034,14 +1252,14 @@ export const NetworkWhitelistView: React.FC<NetworkWhitelistViewProps> = ({
             <div className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
               <h4 className="text-sm font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-2">
                 <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                <span>Privacy Reassurance: Wi-Fi Whitelist vs Zero-Tracking</span>
+                <span>Privacy Reassurance: IP Whitelist vs Location Tracking</span>
               </h4>
 
               <div className="space-y-3 text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
                 <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-200 dark:border-slate-700 space-y-1">
-                  <div className="font-semibold text-slate-900 dark:text-white">What Wi-Fi Whitelisting Does:</div>
+                  <div className="font-semibold text-slate-900 dark:text-white">What IP Whitelisting Does:</div>
                   <p>
-                    It only verifies that the clock-in request originates from the corporate network gateway IP. It provides proof of presence without tracking movements.
+                    It only checks the incoming network client IP to confirm presence at an authorized work location. It replaces invasive location tracking completely.
                   </p>
                 </div>
 
@@ -1049,13 +1267,13 @@ export const NetworkWhitelistView: React.FC<NetworkWhitelistViewProps> = ({
                   <div className="font-semibold text-emerald-900 dark:text-emerald-200">What It NEVER Does:</div>
                   <ul className="list-disc list-inside space-y-1 text-emerald-800 dark:text-emerald-300">
                     <li>Never accesses your device GPS coordinates or precise lat/long.</li>
-                    <li>Never scans for neighboring personal Wi-Fi networks or Bluetooth beacons.</li>
-                    <li>Never monitors personal web traffic, messaging, or apps on your device.</li>
+                    <li>Never scans for neighboring networks or Bluetooth beacons.</li>
+                    <li>Never inspects personal browsing traffic, messages, or apps on your device.</li>
                   </ul>
                 </div>
 
                 <div className="pt-2 flex items-center justify-between text-[11px] text-slate-500">
-                  <span>Audited under Ministry HR Compliance Standard 2026</span>
+                  <span>Audited under Institutional Privacy & Governance Standards</span>
                   <span className="text-teal-600 font-semibold">100% Zero-Tracking Compliant</span>
                 </div>
               </div>
@@ -1072,10 +1290,10 @@ export const NetworkWhitelistView: React.FC<NetworkWhitelistViewProps> = ({
             <div>
               <h3 className="text-base font-semibold text-slate-900 dark:text-white flex items-center gap-2">
                 <Activity className="w-5 h-5 text-teal-600" />
-                {language === 'km' ? 'កំណត់ត្រាតាមដានការតភ្ជាប់បណ្តាញផ្ទាល់' : 'Real-Time Network Telemetry & Access Log'}
+                {language === 'km' ? 'កំណត់ត្រាតាមដានការតភ្ជាប់ IP ផ្ទាល់' : 'Real-Time IP Access Telemetry & Attendance Log'}
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                Monitor live clock-in events, IP resolutions, latency, and whitelist compliance. Adjust subnets with 1 click.
+                Monitor live clock-in events, IP resolutions, and whitelist compliance. Whitelist specific IPs directly from logs with 1 click.
               </p>
             </div>
 
@@ -1085,7 +1303,7 @@ export const NetworkWhitelistView: React.FC<NetworkWhitelistViewProps> = ({
                 <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
                 <input
                   type="text"
-                  placeholder="Search staff, IP, SSID..."
+                  placeholder="Search staff, IP..."
                   value={searchQuery}
                   onChange={e => setSearchQuery(e.target.value)}
                   className="pl-8 pr-3 py-1.5 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:border-teal-500 w-44"
@@ -1123,7 +1341,7 @@ export const NetworkWhitelistView: React.FC<NetworkWhitelistViewProps> = ({
                     <th className="px-4 py-3 font-semibold">Timestamp</th>
                     <th className="px-4 py-3 font-semibold">Employee</th>
                     <th className="px-4 py-3 font-semibold">Client IP</th>
-                    <th className="px-4 py-3 font-semibold">Matched Network / SSID</th>
+                    <th className="px-4 py-3 font-semibold">Matched Network / IP</th>
                     <th className="px-4 py-3 font-semibold">Status</th>
                     <th className="px-4 py-3 font-semibold">Action</th>
                     <th className="px-4 py-3 font-semibold">Latency</th>
@@ -1145,18 +1363,13 @@ export const NetworkWhitelistView: React.FC<NetworkWhitelistViewProps> = ({
                           <div className="font-semibold text-slate-900 dark:text-white">{log.employeeName}</div>
                           <div className="text-[10px] text-slate-400">{log.departmentName}</div>
                         </td>
-                        <td className="px-4 py-3 font-mono text-slate-800 dark:text-slate-200">
+                        <td className="px-4 py-3 font-mono text-slate-800 dark:text-slate-200 font-semibold">
                           {log.clientIp}
                         </td>
                         <td className="px-4 py-3">
                           <div className="font-medium text-slate-900 dark:text-white">
-                            {log.matchedNetworkName || 'External ISP Pool'}
+                            {log.matchedNetworkName || 'External IP'}
                           </div>
-                          {log.ssid && (
-                            <div className="text-[10px] font-mono text-teal-600 dark:text-teal-400">
-                              SSID: {log.ssid}
-                            </div>
-                          )}
                           {log.flaggedReason && (
                             <div className="text-[10px] text-amber-600 dark:text-amber-400 italic">
                               {log.flaggedReason}
@@ -1178,40 +1391,32 @@ export const NetworkWhitelistView: React.FC<NetworkWhitelistViewProps> = ({
                             {log.whitelistStatus}
                           </span>
                         </td>
-                        <td className="px-4 py-3 font-medium">{log.action}</td>
-                        <td className="px-4 py-3 font-mono text-[11px] text-slate-500">{log.latencyMs}ms</td>
-                        <td className="px-4 py-3 text-right whitespace-nowrap">
-                          {isSuperOrAdmin && !isWhitelisted && (
+                        <td className="px-4 py-3 font-medium text-slate-800 dark:text-slate-200">
+                          {log.action}
+                        </td>
+                        <td className="px-4 py-3 font-mono text-slate-500">
+                          {log.latencyMs}ms
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          {!isWhitelisted && isSuperOrAdmin && (
                             <button
                               onClick={() => {
-                                const cleanIp = log.clientIp.split('/')[0].split(' ')[0];
-                                const parts = cleanIp.split('.');
-                                const subnetGuess = parts.length === 4 ? `${parts[0]}.${parts[1]}.${parts[2]}.0/24` : cleanIp;
-                                setFormData({
-                                  name: `Branch / Subnet for ${log.employeeName}`,
-                                  nameKm: '',
-                                  ssid: log.ssid || 'REMOTE-BRANCH-WIFI',
-                                  bssidPrefix: '',
-                                  ipRanges: subnetGuess,
-                                  gatewayIp: parts.length === 4 ? `${parts[0]}.${parts[1]}.${parts[2]}.1` : '192.168.1.1',
-                                  dnsServers: '1.1.1.1, 8.8.8.8',
-                                  locationName: `${log.departmentName} Regional Site`,
-                                  securityType: 'WPA2/WPA3 Personal',
-                                  status: 'Active',
-                                  allowSeamlessCheckIn: true,
-                                  firewallConfigured: true,
-                                  description: `Auto-whitelisted following monitoring adjustment for employee ${log.employeeName}`,
-                                });
-                                setEditingNetwork(null);
-                                setShowAddModal(true);
+                                db.addAllowedSpecificIp(log.clientIp);
+                                refreshState();
+                                setSaveSuccessMsg(`Added ${log.clientIp} to authorized specific IPs list!`);
+                                setTimeout(() => setSaveSuccessMsg(null), 3500);
                               }}
-                              className="px-2 py-1 text-[11px] font-semibold bg-teal-50 dark:bg-teal-950 hover:bg-teal-100 dark:hover:bg-teal-900 text-teal-700 dark:text-teal-300 rounded border border-teal-300 dark:border-teal-800 transition"
+                              className="px-2.5 py-1 text-[11px] font-semibold bg-teal-50 dark:bg-teal-950 hover:bg-teal-100 dark:hover:bg-teal-900 text-teal-700 dark:text-teal-300 rounded border border-teal-300 dark:border-teal-800 transition whitespace-nowrap inline-flex items-center gap-1"
                             >
-                              + Whitelist Subnet
+                              <Plus className="w-3 h-3" />
+                              <span>Whitelist IP</span>
                             </button>
                           )}
                           {isWhitelisted && (
-                            <span className="text-[11px] text-emerald-600 font-medium">Verified</span>
+                            <span className="text-[11px] text-emerald-600 font-medium inline-flex items-center gap-1">
+                              <CheckCircle2 className="w-3 h-3" />
+                              <span>Authorized</span>
+                            </span>
                           )}
                         </td>
                       </tr>
@@ -1224,20 +1429,20 @@ export const NetworkWhitelistView: React.FC<NetworkWhitelistViewProps> = ({
         </div>
       )}
 
-      {/* Add / Edit Network Modal */}
+      {/* Add / Edit Subnet Modal */}
       {showAddModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-xl shadow-2xl p-6 space-y-5">
             <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
               <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <Wifi className="w-5 h-5 text-teal-600" />
+                <Globe className="w-5 h-5 text-teal-600" />
                 {editingNetwork
                   ? language === 'km'
-                    ? 'កែសម្រួលបណ្តាញ Wi-Fi / IP'
-                    : 'Edit Workplace Wi-Fi Network'
+                    ? 'កែសម្រួលបណ្តាញរង IP'
+                    : 'Edit Workplace IP Subnet'
                   : language === 'km'
-                  ? 'បន្ថែមបណ្តាញ Wi-Fi / IP អនុញ្ញាត'
-                  : 'Add Workplace Wi-Fi / IP Subnet'}
+                  ? 'បន្ថែមបណ្តាញរង IP អនុញ្ញាត'
+                  : 'Add Workplace IP Subnet'}
               </h3>
               <button
                 onClick={() => setShowAddModal(false)}
@@ -1251,12 +1456,12 @@ export const NetworkWhitelistView: React.FC<NetworkWhitelistViewProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
-                    Network Name (EN) *
+                    Location / Subnet Name (EN) *
                   </label>
                   <input
                     type="text"
                     required
-                    placeholder="e.g. Phnom Penh HQ - Floor 3 Wi-Fi"
+                    placeholder="e.g. Phnom Penh HQ - Innovation Hub"
                     value={formData.name}
                     onChange={e => setFormData({ ...formData, name: e.target.value })}
                     className="w-full p-2 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:border-teal-500"
@@ -1265,11 +1470,11 @@ export const NetworkWhitelistView: React.FC<NetworkWhitelistViewProps> = ({
 
                 <div>
                   <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
-                    Network Name (Khmer)
+                    Location Name (Khmer)
                   </label>
                   <input
                     type="text"
-                    placeholder="ឈ្មោះបណ្តាញជាភាសាខ្មែរ..."
+                    placeholder="ឈ្មោះទីតាំងជាភាសាខ្មែរ..."
                     value={formData.nameKm}
                     onChange={e => setFormData({ ...formData, nameKm: e.target.value })}
                     className="w-full p-2 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:border-teal-500"
@@ -1280,21 +1485,20 @@ export const NetworkWhitelistView: React.FC<NetworkWhitelistViewProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
-                    Wi-Fi SSID *
+                    Gateway IP
                   </label>
                   <input
                     type="text"
-                    required
-                    placeholder="e.g. CORP-HQ-SECURE-5G"
-                    value={formData.ssid}
-                    onChange={e => setFormData({ ...formData, ssid: e.target.value })}
+                    placeholder="e.g. 192.168.1.1"
+                    value={formData.gatewayIp}
+                    onChange={e => setFormData({ ...formData, gatewayIp: e.target.value })}
                     className="w-full p-2 font-mono border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:border-teal-500"
                   />
                 </div>
 
                 <div>
                   <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
-                    Security Type
+                    Security / Connection Type
                   </label>
                   <select
                     value={formData.securityType}
@@ -1306,10 +1510,10 @@ export const NetworkWhitelistView: React.FC<NetworkWhitelistViewProps> = ({
                     }
                     className="w-full p-2 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none"
                   >
-                    <option value="WPA3 Enterprise (802.1X)">WPA3 Enterprise (802.1X)</option>
-                    <option value="WPA2/WPA3 Personal">WPA2/WPA3 Personal</option>
+                    <option value="Dedicated Static IP Pool">Dedicated Static IP Pool</option>
                     <option value="Corporate VPN Tunnel">Corporate VPN Tunnel</option>
                     <option value="Dedicated Lease Line">Dedicated Lease Line</option>
+                    <option value="WPA3 Enterprise (802.1X)">Enterprise Subnet</option>
                   </select>
                 </div>
               </div>
@@ -1327,27 +1531,27 @@ export const NetworkWhitelistView: React.FC<NetworkWhitelistViewProps> = ({
                   className="w-full p-2 font-mono border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:border-teal-500"
                 />
                 <span className="text-[11px] text-slate-400 block mt-0.5">
-                  Devices connected with an IP inside these CIDR blocks will be recognized as authorized.
+                  Devices with an IP inside these CIDR blocks will be recognized as authorized.
                 </span>
+              </div>
+
+              <div>
+                <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                  Specific Static IPs for this Location (Optional, Comma separated)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. 192.168.1.45, 192.168.1.88, 203.0.113.50"
+                  value={formData.allowedSpecificIps}
+                  onChange={e => setFormData({ ...formData, allowedSpecificIps: e.target.value })}
+                  className="w-full p-2 font-mono border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:border-teal-500"
+                />
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
-                    Gateway IP
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. 192.168.1.1"
-                    value={formData.gatewayIp}
-                    onChange={e => setFormData({ ...formData, gatewayIp: e.target.value })}
-                    className="w-full p-2 font-mono border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
-                    Location Name
+                    Location Name / Campus
                   </label>
                   <input
                     type="text"
@@ -1357,15 +1561,28 @@ export const NetworkWhitelistView: React.FC<NetworkWhitelistViewProps> = ({
                     className="w-full p-2 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none"
                   />
                 </div>
+
+                <div>
+                  <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                    DNS Servers (Comma separated)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. 1.1.1.1, 8.8.8.8"
+                    value={formData.dnsServers}
+                    onChange={e => setFormData({ ...formData, dnsServers: e.target.value })}
+                    className="w-full p-2 font-mono border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none"
+                  />
+                </div>
               </div>
 
               <div>
                 <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
-                  Description / Department Notes
+                  Description / Subnet Purpose
                 </label>
                 <textarea
                   rows={2}
-                  placeholder="Network coverage details, floor information, or purpose..."
+                  placeholder="Subnet coverage details, floor information, or department..."
                   value={formData.description}
                   onChange={e => setFormData({ ...formData, description: e.target.value })}
                   className="w-full p-2 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none"
@@ -1392,7 +1609,7 @@ export const NetworkWhitelistView: React.FC<NetworkWhitelistViewProps> = ({
                     }
                     className="rounded text-teal-600"
                   />
-                  <span className="text-slate-800 dark:text-slate-200">Network Active</span>
+                  <span className="text-slate-800 dark:text-slate-200">Subnet Active</span>
                 </label>
               </div>
 
@@ -1408,7 +1625,7 @@ export const NetworkWhitelistView: React.FC<NetworkWhitelistViewProps> = ({
                   type="submit"
                   className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white font-medium rounded-lg shadow-sm transition"
                 >
-                  {editingNetwork ? 'Update Whitelist' : 'Add to Whitelist'}
+                  {editingNetwork ? 'Update Subnet' : 'Add to Whitelist'}
                 </button>
               </div>
             </form>

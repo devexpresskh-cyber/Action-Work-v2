@@ -53,6 +53,65 @@ export interface User {
   isActive?: boolean;
   avatar?: string;
   createdAt: string;
+  // Telegram Bot integration fields
+  telegramChatId?: string;
+  telegramHandle?: string;
+  telegramNotificationsEnabled?: boolean;
+}
+
+export interface TelegramNotificationConfig {
+  botToken: string;
+  botUsername?: string;
+  defaultChatId?: string;
+  groupChannelChatId?: string; // Group / Channel Chat ID (e.g. -1001234567890 or @channel_name)
+  isEnabled: boolean;
+  gracePeriodMinutes: number; // e.g. 15 minutes after shift start
+  reminderTiming: 'before_shift' | 'at_shift_start' | 'grace_period_expired' | 'both' | 'all';
+  // Advance Pre-Shift Alert Settings
+  beforeShiftAlertEnabled: boolean; // Auto alert to telegram before shift time
+  beforeShiftMinutes: number; // e.g. 15, 30, 45, 60 minutes before shift time
+  beforeShiftTarget: 'both' | 'group_channel' | 'direct_employee';
+  autoSchedulerEnabled: boolean; // Auto-scans in background on interval
+  lastPreShiftScanTime?: string;
+  dispatchedShiftAlertKeys?: string[]; // Keys like "2026-09-23_Morning_preshift"
+  // Policy & supervisor settings
+  notifySupervisorOnAbsence: boolean;
+  supervisorChatId?: string;
+  includeDirectLink: boolean;
+  customMessageTemplateEn?: string;
+  customMessageTemplateKm?: string;
+  lastScanTime?: string;
+}
+
+export interface TelegramNotificationLog {
+  id: string;
+  timestamp: string;
+  recipientUserId: string;
+  recipientName: string;
+  recipientChatId: string;
+  type: 'pre_shift_alert' | 'checkin_reminder' | 'overdue_checkin_alert' | 'checkout_reminder' | 'test_ping' | 'supervisor_digest';
+  messageText: string;
+  status: 'SENT' | 'SIMULATED' | 'FAILED';
+  errorDetails?: string;
+  deliveredAt?: string;
+}
+
+export interface TelegramScanResult {
+  timestamp: string;
+  scannedCount: number;
+  clockedInCount: number;
+  unclockedCount: number;
+  notifiedCount: number;
+  skippedCount: number;
+  alertsDispatched: {
+    userId: string;
+    userName: string;
+    chatId: string;
+    shift: string;
+    overdueMinutes: number;
+    status: 'SENT' | 'SIMULATED' | 'FAILED';
+    error?: string;
+  }[];
 }
 
 export type Employee = User;
@@ -118,6 +177,29 @@ export interface ActionPlan {
   createdAt: string;
   updatedAt: string;
   isArchived?: boolean;
+  lastReviewDate?: string;
+  nextReviewDate?: string;
+  reviewCycle?: 'Weekly' | 'Bi-Weekly' | 'Monthly' | 'Quarterly';
+  alignmentStatus?: 'Fully Aligned' | 'Review Needed' | 'Shifted Priority';
+  collaborationReviews?: PlanCollaborationReview[];
+}
+
+export interface PlanCollaborationReview {
+  id: string;
+  planId: string;
+  requestedById: string;
+  reviewerId: string;
+  reviewType: 'Supervisor Feedback' | 'Team Support' | 'Regular Goal Alignment' | 'Deadline Adjustment';
+  status: 'Pending' | 'Feedback Provided' | 'Acknowledged';
+  notes: string;
+  feedback?: string;
+  adjustmentProposed?: {
+    newDueDate?: string;
+    newPriority?: PriorityLevel;
+    reason?: string;
+  };
+  createdAt: string;
+  respondedAt?: string;
 }
 
 export interface Activity {
@@ -138,6 +220,7 @@ export interface Activity {
   isMilestone?: boolean;
   deliverableOutput?: string;
   kpiTarget?: string;
+  lastAdjustmentReason?: string;
   actualResult?: string;
   estimatedHours?: number;
   actualHours?: number;
@@ -300,16 +383,17 @@ export interface AttendanceRecord {
 
 export interface WorkplaceNetwork {
   id: string;
-  name: string; // e.g., 'Phnom Penh HQ - Primary Wi-Fi (Floor 1-5)'
+  name: string; // e.g., 'Phnom Penh HQ - Main Office Network'
   nameKm?: string;
-  ssid: string; // e.g., 'CORP-HQ-SECURE-5G'
-  bssidPrefix?: string; // e.g., '74:83:C2:B1'
+  ssid?: string; // Optional identifier
+  bssidPrefix?: string; // Optional
   ipRanges: string[]; // e.g., ['192.168.1.0/24', '192.168.2.0/24']
+  allowedSpecificIps?: string[]; // Multiple specific authorized IPs for check-in / check-out
   gatewayIp: string; // e.g., '192.168.1.1'
   dnsServers: string[]; // e.g., ['192.168.1.2', '1.1.1.1']
   locationName: string; // e.g., 'Phnom Penh HQ - Main Tower'
   departmentId?: string; // 'all' or specific department ID
-  securityType: 'WPA3 Enterprise (802.1X)' | 'WPA2/WPA3 Personal' | 'Corporate VPN Tunnel' | 'Dedicated Lease Line';
+  securityType: 'Enterprise Static IP' | 'Corporate VPN Tunnel' | 'Dedicated Lease Line' | 'Office Subnet' | 'Cloud Edge IP' | string;
   status: 'Active' | 'Under Maintenance' | 'Disabled';
   allowSeamlessCheckIn: boolean; // Enables 1-click frictionless clock in/out
   firewallConfigured: boolean; // True if port 443, captive portal bypass, etc. active
@@ -322,7 +406,8 @@ export interface WorkplaceNetwork {
 
 export interface NetworkSettingsConfig {
   enforceMode: 'Flexible' | 'Strict' | 'Advisory'; // Flexible: allow remote with badge; Strict: block non-whitelisted; Advisory: log only
-  seamlessCheckInEnabled: boolean; // 1-click instant check-in when on whitelisted Wi-Fi
+  seamlessCheckInEnabled: boolean; // 1-click instant check-in when on whitelisted IP
+  allowedSpecificIps?: string[]; // Global multiple specific allowed IPs for check-in / check-out
   allowVpnFallback: boolean; // Accept enterprise VPN subnet (10.8.0.0/16) as whitelisted
   allowedPorts: number[]; // [80, 443, 8443, 123]
   sslTlsInspectionBypass: boolean; // Bypass deep packet SSL inspection for biometric/auth endpoints
@@ -353,13 +438,13 @@ export interface NetworkAccessLog {
 export interface CurrentNetworkConnection {
   networkId: string;
   networkName: string;
-  ssid: string;
+  ssid?: string;
   clientIp: string;
   gatewayIp: string;
   isWhitelisted: boolean;
   seamlessEligible: boolean;
   latencyMs: number;
-  connectionType: 'Workplace Wi-Fi' | 'Corporate VPN' | 'Guest Wi-Fi' | 'External / Cellular';
+  connectionType: 'Authorized Workplace IP' | 'Corporate VPN' | 'Specific Allowed IP' | 'External / Remote IP' | string;
 }
 
 export interface PrivacyAuditRecord {

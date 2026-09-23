@@ -26,13 +26,17 @@ import {
   Mic,
   Sparkles,
   UserCheck,
-  Check
+  Check,
+  Users as UsersIcon,
+  MessageSquare
 } from 'lucide-react';
 import { ActionPlan, Language, User, PriorityLevel, PlanStatus, Department, Objective } from '../types';
 import { translations } from '../services/i18n';
 import { db } from '../services/db';
 import { ProgressModal } from './ProgressModal';
 import { ApprovalModal } from './ApprovalModal';
+import { PlanCollaborationModal } from './PlanCollaborationModal';
+import { PlanGoalReviewModal } from './PlanGoalReviewModal';
 
 interface ActionPlansViewProps {
   currentUser: User;
@@ -66,7 +70,9 @@ export const ActionPlansView: React.FC<ActionPlansViewProps> = ({
   const [filterDept, setFilterDept] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterPriority, setFilterPriority] = useState('all');
-  const [filterOwnership, setFilterOwnership] = useState<'all' | 'my-owned'>('all');
+  const [filterOwnership, setFilterOwnership] = useState<'all' | 'my-owned'>(() => {
+    return currentUser.role === 'Employee' ? 'my-owned' : 'all';
+  });
   const [sortField, setSortField] = useState<'dueDate' | 'completionPercentage' | 'priority'>('dueDate');
   const [sortAsc, setSortAsc] = useState(true);
 
@@ -80,6 +86,8 @@ export const ActionPlansView: React.FC<ActionPlansViewProps> = ({
   const [inspectingPlan, setInspectingPlan] = useState<ActionPlan | null>(null);
   const [progressPlan, setProgressPlan] = useState<ActionPlan | null>(null);
   const [approvalPlan, setApprovalPlan] = useState<ActionPlan | null>(null);
+  const [collaborationPlan, setCollaborationPlan] = useState<ActionPlan | null>(null);
+  const [goalReviewPlan, setGoalReviewPlan] = useState<ActionPlan | null>(null);
   const [planToDelete, setPlanToDelete] = useState<ActionPlan | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [feedbackNotice, setFeedbackNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
@@ -504,6 +512,52 @@ export const ActionPlansView: React.FC<ActionPlansViewProps> = ({
         </div>
       </div>
 
+      {/* Owned Responsibilities & Collaboration Guidance Banner */}
+      {filterOwnership === 'my-owned' && (
+        <div className="bg-gradient-to-r from-blue-900 via-indigo-950 to-slate-900 text-white p-5 rounded-xl shadow-xs border border-blue-800/40 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div className="space-y-1.5 max-w-2xl">
+            <div className="inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 text-xs font-semibold border border-blue-400/30">
+              <UserCheck className="w-3.5 h-3.5" />
+              <span>{lang === 'km' ? 'ការគ្រប់គ្រងផែនការ និងភារកិច្ចផ្ទាល់ខ្លួន' : 'Owned Action Plans & Task Responsibilities'}</span>
+            </div>
+            <h3 className="text-sm md:text-base font-bold text-white">
+              {lang === 'km' ? 'ការគ្រប់គ្រងសម្រួលការងារ វឌ្ឍនភាព និងការតម្រឹមគោលដៅស្ថាប័ន' : 'Direct Access, Priority Management & Team Collaboration'}
+            </h3>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              {lang === 'km'
+                ? 'បុគ្គលិកអាចចូលមើលផែនការសកម្មភាព និងកិច្ចការដែលខ្លួនគ្រប់គ្រងដោយផ្ទាល់យ៉ាងងាយស្រួល។ មុខងារនេះជួយសម្រួលការគ្រប់គ្រងទំនួលខុសត្រូវ តាមដានវឌ្ឍនភាព និងរក្សាការរៀបចំទុកដាក់។ លើសពីនេះ លោកអ្នកអាចចែករំលែកផែនការជាមួយសមាជិកក្រុម ឬអ្នកគ្រប់គ្រងដើម្បីទទួលបានមតិកែលម្អ និងជំនួយគាំទ្រ ព្រមទាំងធ្វើការត្រួតពិនិត្យទៀងទាត់ដើម្បីឱ្យស្របតាមគោលបំណងរបស់ស្ថាប័ន។'
+                : 'Employees can easily access their owned Action Plans and Tasks through the designated platform. This feature allows for streamlined management of responsibilities, ensuring that individuals can track their progress and stay organized. By having direct access, employees can prioritize their tasks effectively and make necessary adjustments to meet deadlines. Additionally, tools for collaboration enable sharing with team members or supervisors for feedback and support, while encouraging regular reviews to stay aligned with organizational goals.'}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            {myOwnedPlansCount > 0 && (
+              <button
+                onClick={() => {
+                  const firstOwned = plans.find(p => p.ownerId === currentUser.id || p.createdById === currentUser.id);
+                  if (firstOwned) setCollaborationPlan(firstOwned);
+                }}
+                className="flex items-center space-x-1.5 px-3.5 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-bold border border-white/20 transition"
+              >
+                <UsersIcon className="w-3.5 h-3.5 text-blue-300" />
+                <span>{lang === 'km' ? 'ចែករំលែកជាមួយអ្នកគ្រប់គ្រង' : 'Collaborate / Share'}</span>
+              </button>
+            )}
+            {myOwnedPlansCount > 0 && (
+              <button
+                onClick={() => {
+                  const firstOwned = plans.find(p => p.ownerId === currentUser.id || p.createdById === currentUser.id);
+                  if (firstOwned) setGoalReviewPlan(firstOwned);
+                }}
+                className="flex items-center space-x-1.5 px-3.5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition shadow-xs"
+              >
+                <Target className="w-3.5 h-3.5 text-white" />
+                <span>{lang === 'km' ? 'ត្រួតពិនិត្យគោលដៅទៀងទាត់' : 'Periodic Review'}</span>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Plans Table */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
         <div className="overflow-x-auto">
@@ -558,6 +612,31 @@ export const ActionPlansView: React.FC<ActionPlansViewProps> = ({
                         {plan.kpi && (
                           <div className="text-[11px] text-slate-500 mt-1 line-clamp-1">
                             KPI: <span className="text-slate-700 font-medium">{plan.kpi} ({plan.kpiActual}/{plan.kpiTarget} {plan.kpiUnit})</span>
+                          </div>
+                        )}
+                        {plan.alignmentStatus && (
+                          <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                            <span className={`inline-flex items-center space-x-1 px-1.5 py-0.2 rounded text-[10px] font-semibold ${
+                              plan.alignmentStatus === 'Fully Aligned' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                              plan.alignmentStatus === 'Review Needed' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
+                              'bg-rose-50 text-rose-700 border border-rose-200'
+                            }`}>
+                              <Target className="w-2.5 h-2.5" />
+                              <span>{plan.alignmentStatus}</span>
+                            </span>
+                            {plan.nextReviewDate && (
+                              <span className="text-[10px] text-slate-400">
+                                {lang === 'km' ? 'ត្រួតពិនិត្យបន្ទាប់៖' : 'Next review:'} {plan.nextReviewDate}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                        {plan.collaborationReviews && plan.collaborationReviews.length > 0 && (
+                          <div className="mt-0.5">
+                            <span className="inline-flex items-center space-x-1 px-1.5 py-0.2 rounded text-[10px] font-medium bg-indigo-50 text-indigo-700 border border-indigo-200">
+                              <UsersIcon className="w-2.5 h-2.5" />
+                              <span>{plan.collaborationReviews.length} {lang === 'km' ? 'សំណើសហការ/មតិ' : 'reviews/notes'}</span>
+                            </span>
                           </div>
                         )}
                       </td>
@@ -616,6 +695,24 @@ export const ActionPlansView: React.FC<ActionPlansViewProps> = ({
                       {/* Actions */}
                       <td className="py-3 px-4 text-right">
                         <div className="flex items-center justify-end space-x-1">
+                          {/* Collaborate / Share with Supervisor or Team */}
+                          <button
+                            onClick={() => setCollaborationPlan(plan)}
+                            className="p-1.5 rounded-md text-slate-500 hover:text-indigo-600 hover:bg-indigo-50"
+                            title={lang === 'km' ? 'ចែករំលែក & ស្នើសុំមតិសហការ' : 'Share & Request Feedback / Support'}
+                          >
+                            <MessageSquare className="w-4 h-4" />
+                          </button>
+
+                          {/* Goal Alignment & Periodic Review */}
+                          <button
+                            onClick={() => setGoalReviewPlan(plan)}
+                            className="p-1.5 rounded-md text-slate-500 hover:text-blue-600 hover:bg-blue-50"
+                            title={lang === 'km' ? 'ត្រួតពិនិត្យការតម្រឹមគោលដៅ និងកាលបរិច្ឆេទ' : 'Goal Alignment & Review Checkpoint'}
+                          >
+                            <Target className="w-4 h-4" />
+                          </button>
+
                           {/* Inspect Details */}
                           <button
                             onClick={() => setInspectingPlan(plan)}
@@ -1187,6 +1284,28 @@ export const ActionPlansView: React.FC<ActionPlansViewProps> = ({
                     <span>{lang === 'km' ? 'បញ្ចប់ ១០០% ភ្លាមៗ' : '1-Click Complete (100%)'}</span>
                   </button>
                 )}
+                {/* Collaborate & Feedback Button */}
+                <button
+                  onClick={() => {
+                    const p = inspectingPlan;
+                    setCollaborationPlan(p);
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs transition flex items-center space-x-1"
+                >
+                  <UsersIcon className="w-3.5 h-3.5" />
+                  <span>{lang === 'km' ? 'កិច្ចសហការ & មតិកែលម្អ' : 'Collaborate / Feedback'}</span>
+                </button>
+                {/* Periodic Review & Alignment Button */}
+                <button
+                  onClick={() => {
+                    const p = inspectingPlan;
+                    setGoalReviewPlan(p);
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs transition flex items-center space-x-1"
+                >
+                  <Target className="w-3.5 h-3.5" />
+                  <span>{lang === 'km' ? 'ត្រួតពិនិត្យគោលដៅទៀងទាត់' : 'Periodic Goal Review'}</span>
+                </button>
                 <button
                   onClick={() => {
                     setProgressPlan(inspectingPlan);
@@ -1333,6 +1452,42 @@ export const ActionPlansView: React.FC<ActionPlansViewProps> = ({
           onClose={() => setApprovalPlan(null)}
           onSuccess={() => {
             refreshPlans();
+            if (inspectingPlan) {
+              setInspectingPlan(db.getPlanById(inspectingPlan.id) || null);
+            }
+          }}
+        />
+      )}
+
+      {/* PLAN COLLABORATION & FEEDBACK MODAL */}
+      {collaborationPlan && (
+        <PlanCollaborationModal
+          isOpen={!!collaborationPlan}
+          onClose={() => setCollaborationPlan(null)}
+          plan={collaborationPlan}
+          currentUser={currentUser}
+          lang={lang}
+          onSuccess={(msg) => {
+            refreshPlans();
+            setFeedbackNotice({ type: 'success', message: msg });
+            if (inspectingPlan) {
+              setInspectingPlan(db.getPlanById(inspectingPlan.id) || null);
+            }
+          }}
+        />
+      )}
+
+      {/* PLAN GOAL ALIGNMENT & PERIODIC REVIEW MODAL */}
+      {goalReviewPlan && (
+        <PlanGoalReviewModal
+          isOpen={!!goalReviewPlan}
+          onClose={() => setGoalReviewPlan(null)}
+          plan={goalReviewPlan}
+          currentUser={currentUser}
+          lang={lang}
+          onSuccess={(msg) => {
+            refreshPlans();
+            setFeedbackNotice({ type: 'success', message: msg });
             if (inspectingPlan) {
               setInspectingPlan(db.getPlanById(inspectingPlan.id) || null);
             }

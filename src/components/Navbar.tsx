@@ -90,30 +90,30 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   return (
     <header className="sticky top-0 z-30 bg-white border-b border-slate-200 shadow-xs no-print">
-      <div className="w-full px-3 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16">
+      <div className="w-full px-2.5 sm:px-6 lg:px-8">
+        <div className="flex items-center justify-between gap-2 sm:gap-4 h-16">
           {/* Brand & Mobile Hamburger */}
-          <div className="flex items-center space-x-2 sm:space-x-3 min-w-0">
+          <div className="flex items-center space-x-2 sm:space-x-3 min-w-0 flex-1 overflow-hidden">
             {onToggleMobileNav && (
               <button
                 type="button"
                 onClick={onToggleMobileNav}
-                className="lg:hidden p-2 -ml-1 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition focus:outline-hidden"
+                className="lg:hidden p-1.5 sm:p-2 -ml-0.5 sm:-ml-1 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition focus:outline-hidden shrink-0"
                 aria-label="Toggle navigation menu"
               >
                 {isMobileNavOpen ? <X className="w-5 h-5 text-slate-900" /> : <Menu className="w-5 h-5" />}
               </button>
             )}
 
-            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-blue-700 flex items-center justify-center text-white shadow-md shadow-blue-500/20 font-bold text-lg sm:text-xl tracking-tight shrink-0">
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-blue-700 flex items-center justify-center text-white shadow-md shadow-blue-500/20 font-bold text-sm sm:text-base tracking-tight shrink-0 select-none">
               AP
             </div>
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <div className="flex items-center space-x-2">
-                <h1 className="text-base sm:text-lg font-bold text-slate-900 leading-none truncate max-w-[140px] sm:max-w-xs md:max-w-none">
+                <h1 className="text-xs sm:text-base md:text-lg font-bold text-slate-900 leading-tight truncate">
                   {t.systemTitle}
                 </h1>
-                <span className="hidden md:inline-block px-2 py-0.5 text-xs font-semibold rounded-md bg-blue-50 text-blue-700 border border-blue-200 shrink-0">
+                <span className="hidden xl:inline-block px-2 py-0.5 text-xs font-semibold rounded-md bg-blue-50 text-blue-700 border border-blue-200 shrink-0">
                   Laravel 12 / MySQL 8
                 </span>
               </div>
@@ -124,15 +124,15 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
 
           {/* Right tools */}
-          <div className="flex items-center space-x-1.5 sm:space-x-2.5 shrink-0">
+          <div className="flex items-center space-x-1 sm:space-x-2 shrink-0">
             {/* Quick Global Search (Ctrl+K) */}
             {onOpenSearch && (
               <button
                 onClick={onOpenSearch}
-                className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-slate-50/70 hover:bg-slate-100 text-xs text-slate-600 transition"
+                className="flex items-center space-x-1.5 p-1.5 sm:px-2.5 sm:py-1.5 rounded-lg border border-slate-200 bg-slate-50/70 hover:bg-slate-100 text-xs text-slate-600 transition shrink-0"
                 title={lang === 'km' ? 'ស្វែងរកផែនការសកម្មភាព ភារកិច្ច បុគ្គលិក (Ctrl+K)' : 'Search action plans, tasks, staff (Ctrl+K)'}
               >
-                <Search className="w-3.5 h-3.5 text-slate-500" />
+                <Search className="w-4 h-4 text-slate-500 shrink-0" />
                 <span className="hidden lg:inline text-slate-500">{lang === 'km' ? 'ស្វែងរក...' : 'Search...'}</span>
                 <kbd className="hidden sm:inline-block px-1 py-0.2 text-[10px] font-mono text-slate-400 bg-slate-200/60 rounded-xs">
                   ⌘K
@@ -140,11 +140,11 @@ export const Navbar: React.FC<NavbarProps> = ({
               </button>
             )}
 
-            {/* Voice-Activated Plan Assistant */}
+            {/* Voice-Activated Plan Assistant - Visible from sm screens up */}
             {onOpenVoiceAssistant && (
               <button
                 onClick={onOpenVoiceAssistant}
-                className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg border border-indigo-200 bg-indigo-50/80 hover:bg-indigo-100 text-xs font-semibold text-indigo-700 transition shadow-2xs group"
+                className="hidden sm:flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg border border-indigo-200 bg-indigo-50/80 hover:bg-indigo-100 text-xs font-semibold text-indigo-700 transition shadow-2xs group shrink-0"
                 title={lang === 'km' ? 'ប្រព័ន្ធបញ្ជាដោយសំឡេង (Voice Assistant)' : 'Voice-Activated Plan System (Voice Assistant)'}
               >
                 <span className="relative flex h-2 w-2">
@@ -152,7 +152,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   <span className="relative inline-flex rounded-full h-2 w-2 bg-indigo-500"></span>
                 </span>
                 <Mic className="w-3.5 h-3.5 text-indigo-600 group-hover:scale-110 transition" />
-                <span className="hidden sm:inline">{lang === 'km' ? 'សំឡេង' : 'Voice'}</span>
+                <span className="hidden md:inline">{lang === 'km' ? 'សំឡេង' : 'Voice'}</span>
               </button>
             )}
 
@@ -160,18 +160,18 @@ export const Navbar: React.FC<NavbarProps> = ({
             {onNavigateTab && (
               <button
                 onClick={() => onNavigateTab('employee-hub')}
-                className="hidden sm:flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 text-xs font-semibold transition"
+                className="hidden md:flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 text-xs font-semibold transition shrink-0"
                 title={lang === 'km' ? 'បើកមជ្ឈមណ្ឌលបទពិសោធន៍បុគ្គលិក' : 'Open Employee Mobile Experience Hub'}
               >
                 <Sparkles className="w-3.5 h-3.5" />
-                <span className="hidden md:inline">{lang === 'km' ? 'មជ្ឈមណ្ឌល' : 'Employee Hub'}</span>
+                <span className="hidden lg:inline">{lang === 'km' ? 'មជ្ឈមណ្ឌល' : 'Employee Hub'}</span>
               </button>
             )}
 
             {/* Quick Attendance Widget */}
             <button
               onClick={() => onNavigateTab && onNavigateTab('attendance')}
-              className={`hidden md:flex items-center space-x-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition ${
+              className={`hidden md:flex items-center space-x-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition shrink-0 ${
                 todayAttendance?.checkOutTime
                   ? 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
                   : todayAttendance?.checkInTime
@@ -194,7 +194,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             {onOpenRbacMatrix && currentUser.role !== 'Employee' && (
               <button
                 onClick={onOpenRbacMatrix}
-                className="hidden lg:flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition shadow-xs"
+                className="hidden lg:flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition shadow-xs shrink-0"
                 title={lang === 'km' ? 'ពិនិត្យតារាងសិទ្ធិអនុញ្ញាតតាមតួនាទី (RBAC)' : 'Inspect Role-Based Access Control (RBAC) Matrix'}
               >
                 <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
@@ -202,11 +202,11 @@ export const Navbar: React.FC<NavbarProps> = ({
               </button>
             )}
 
-            {/* Feedback Button */}
+            {/* Feedback Button - Visible on tablet/desktop */}
             {onOpenFeedback && (
               <button
                 onClick={onOpenFeedback}
-                className="p-1.5 sm:px-2.5 sm:py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-medium transition flex items-center space-x-1"
+                className="hidden md:flex p-1.5 sm:px-2.5 sm:py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-medium transition items-center space-x-1 shrink-0"
                 title={lang === 'km' ? 'បញ្ជូនមតិកែលម្អ និងសំណើបុគ្គលិក' : 'Submit Employee Feedback & Suggestions'}
               >
                 <MessageSquare className="w-4 h-4 text-rose-500" />
@@ -217,24 +217,24 @@ export const Navbar: React.FC<NavbarProps> = ({
             {/* Language Switcher */}
             <button
               onClick={() => onLanguageChange(lang === 'en' ? 'km' : 'en')}
-              className="flex items-center space-x-1 sm:space-x-1.5 px-2 sm:px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-xs font-medium text-slate-700 transition"
+              className="flex items-center space-x-1 px-1.5 sm:px-2.5 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-xs font-medium text-slate-700 transition shrink-0"
               title="Switch Language"
             >
-              <Globe className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-500 shrink-0" />
-              <span className="hidden sm:inline">{lang === 'en' ? 'ខ្មែរ (KM)' : 'English (EN)'}</span>
-              <span className="sm:hidden font-semibold">{lang === 'en' ? 'KM' : 'EN'}</span>
+              <Globe className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+              <span className="hidden sm:inline">{lang === 'en' ? 'ខ្មែរ' : 'EN'}</span>
+              <span className="sm:hidden font-bold text-[11px]">{lang === 'en' ? 'KM' : 'EN'}</span>
             </button>
 
             {/* Notifications */}
-            <div className="relative">
+            <div className="relative shrink-0">
               <button
                 onClick={() => setShowNotifMenu(!showNotifMenu)}
-                className="relative p-2 rounded-lg text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition"
+                className="relative p-1.5 sm:p-2 rounded-lg text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition"
                 title={t.notifications}
               >
-                <Bell className="w-5 h-5" />
+                <Bell className="w-4 h-4 sm:w-5 sm:h-5" />
                 {unreadCount > 0 && (
-                  <span className="absolute top-1 right-1 w-4 h-4 bg-rose-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center animate-pulse">
+                  <span className="absolute top-0.5 right-0.5 sm:top-1 sm:right-1 w-4 h-4 bg-rose-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center animate-pulse">
                     {unreadCount}
                   </span>
                 )}
@@ -291,15 +291,15 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
 
             {/* Role Switcher Menu (Simulate all 6 roles) */}
-            <div className="relative">
+            <div className="relative shrink-0">
               <button
                 onClick={() => setShowRoleMenu(!showRoleMenu)}
-                className="flex items-center space-x-1.5 sm:space-x-2 px-2 sm:px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 transition"
+                className="flex items-center space-x-1 sm:space-x-2 px-1.5 sm:px-3 py-1 sm:py-1.5 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 transition"
               >
-                <div className="w-7 h-7 rounded-full bg-slate-800 text-white flex items-center justify-center text-xs font-semibold shrink-0">
+                <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-full bg-slate-800 text-white flex items-center justify-center text-[11px] sm:text-xs font-semibold shrink-0">
                   {currentUser.name.split(' ').map(n => n[0]).join('')}
                 </div>
-                <div className="text-left hidden sm:block">
+                <div className="text-left hidden md:block">
                   <div className="text-xs font-bold text-slate-900 leading-tight">
                     {currentUser.name}
                   </div>
@@ -309,7 +309,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     </span>
                   </div>
                 </div>
-                <ChevronDown className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-400" />
+                <ChevronDown className="w-3 h-3 sm:w-4 sm:h-4 text-slate-400" />
               </button>
 
               {showRoleMenu && (

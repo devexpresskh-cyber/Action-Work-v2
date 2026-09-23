@@ -230,11 +230,13 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
 
   // Export handlers
   const handleExportCSV = () => {
-    exportToCSV(`ActionPlan_${reportData.title.replace(/\s+/g, '_')}`, reportData.headers, reportData.rows);
+    const safeTitle = (reportData.title || `Report_${selectedReport}`).replace(/\s+/g, '_');
+    exportToCSV(`ActionPlan_${safeTitle}`, reportData.headers, reportData.rows);
   };
 
   const handleExportExcel = () => {
-    exportToExcel(`ActionPlan_${reportData.title.replace(/\s+/g, '_')}`, reportData.headers, reportData.rows);
+    const safeTitle = (reportData.title || `Report_${selectedReport}`).replace(/\s+/g, '_');
+    exportToExcel(`ActionPlan_${safeTitle}`, reportData.headers, reportData.rows);
   };
 
   const handlePrint = () => {

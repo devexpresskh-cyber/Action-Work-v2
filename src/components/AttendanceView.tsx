@@ -29,10 +29,15 @@ import {
   Moon,
   Pencil,
   Sliders,
-  Wifi,
-  WifiOff,
+  Globe,
   Lock,
   EyeOff,
+  HelpCircle,
+  UserCheck,
+  FileText,
+  Mail,
+  Phone,
+  Send,
 } from 'lucide-react';
 import {
   User as UserType,
@@ -49,6 +54,9 @@ import { AttendanceDossierModal } from './AttendanceDossierModal';
 import { EditAttendanceShiftModal } from './EditAttendanceShiftModal';
 import { ShiftSchedulesModal } from './ShiftSchedulesModal';
 import { NetworkWhitelistView } from './NetworkWhitelistView';
+import { ContactSupervisorModal } from './ContactSupervisorModal';
+import { TelegramNotificationModal } from './TelegramNotificationModal';
+import { sendTelegramMessage, buildOverdueCheckInMessage } from '../services/telegramService';
 import { exportToCSV, exportToExcel } from '../services/exportUtils';
 
 interface AttendanceViewProps {
@@ -63,10 +71,18 @@ export const AttendanceView: React.FC<AttendanceViewProps> = ({
   onNavigateTab,
 }) => {
   const t = translations[lang];
-  const isSuperOrAdmin = currentUser.role === 'Super Admin' || currentUser.role === 'Admin';
+  const isSuperOrAdmin = currentUser.role === 'Super Admin' || currentUser.role === 'Administrator';
+  const isEmployee = currentUser.role === 'Employee';
+  const canManageOthers = db.canAccessOthersAttendance(currentUser);
 
   // Active view tab: 'daily' | 'monthly-reports' | 'my-history' | 'network-whitelist'
   const [activeTab, setActiveTab] = useState<'daily' | 'monthly-reports' | 'my-history' | 'network-whitelist'>('daily');
+
+  // Contact supervisor or HR modal for attendance assistance / managing others
+  const [isContactSupervisorModalOpen, setIsContactSupervisorModalOpen] = useState(false);
+
+  // Telegram Notification & Alert Bot Modal
+  const [isTelegramModalOpen, setIsTelegramModalOpen] = useState(false);
 
   // Workplace Network Connection & Settings
   const [currentConnection, setCurrentConnection] = useState(() => db.getCurrentNetworkConnection());
@@ -96,8 +112,16 @@ export const AttendanceView: React.FC<AttendanceViewProps> = ({
     db.getTodayAttendance(currentUser.id)
   );
 
-  // All Attendance Records
-  const [records, setRecords] = useState<AttendanceRecord[]>(() => db.getAttendanceRecords());
+  // Attendance Records - strictly authorized based on user role (Employees only access their own records)
+  const [records, setRecords] = useState<AttendanceRecord[]>(() => 
+    db.getAuthorizedAttendanceRecords(currentUser)
+  );
+
+  // Sync authorized attendance records whenever current active user switches
+  useEffect(() => {
+    setRecords(db.getAuthorizedAttendanceRecords(currentUser));
+    setTodayRecord(db.getTodayAttendance(currentUser.id));
+  }, [currentUser.id, currentUser.role]);
 
   // Monthly Reports list
   const [monthlyReports, setMonthlyReports] = useState<MonthlyAttendanceReport[]>(() =>
@@ -145,7 +169,7 @@ export const AttendanceView: React.FC<AttendanceViewProps> = ({
   const users = db.getUsers();
 
   const refreshData = () => {
-    setRecords(db.getAttendanceRecords());
+    setRecords(db.getAuthorizedAttendanceRecords(currentUser));
     setTodayRecord(db.getTodayAttendance(currentUser.id));
     setMonthlyReports(db.getMonthlyReports());
     setCurrentConnection(db.getCurrentNetworkConnection());
@@ -163,7 +187,6 @@ export const AttendanceView: React.FC<AttendanceViewProps> = ({
       {
         clientIp: currentConnection.clientIp,
         networkId: currentConnection.networkId,
-        ssid: currentConnection.ssid,
         forceSeamless: currentConnection.isWhitelisted && networkSettings.seamlessCheckInEnabled,
       }
     );
@@ -229,6 +252,59 @@ export const AttendanceView: React.FC<AttendanceViewProps> = ({
     }
   };
 
+  // Handle Single Telegram Reminder to User (WITHOUT AUTO-CHECK IN!)
+  const handleSendTelegramReminderToUser = async (userId: string, userName: string) => {
+    const allUsers = db.getUsers();
+    const targetUser = allUsers.find(u => u.id === userId);
+    const telConfig = db.getTelegramConfig();
+    const targetChatId = targetUser?.telegramChatId || telConfig.defaultChatId;
+
+    if (!targetChatId) {
+      setNotificationBanner(
+        lang === 'km'
+          ? `សូមកំណត់ Telegram Chat ID សម្រាប់ ${userName} ជាមុនសិនក្នុងមជ្ឈមណ្ឌល Telegram`
+          : `Please configure a Telegram Chat ID for ${userName} in the Telegram Alert Center.`
+      );
+      setTimeout(() => setNotificationBanner(null), 4500);
+      setIsTelegramModalOpen(true);
+      return;
+    }
+
+    const dept = departments.find(d => d.id === targetUser?.departmentId)?.name || 'General Department';
+    const msg = buildOverdueCheckInMessage({
+      employeeName: userName,
+      employeeId: targetUser?.employeeId || 'EMP',
+      departmentName: dept,
+      shiftName: lang === 'km' ? 'វេនព្រឹក' : 'Morning Shift',
+      shiftTime: '08:00 - 12:00',
+      overdueMinutes: 15,
+      graceMinutes: telConfig.gracePeriodMinutes || 15,
+      lang,
+    });
+
+    const res = await sendTelegramMessage(telConfig.botToken, targetChatId, msg);
+
+    db.logTelegramNotification({
+      id: `tlog-${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      recipientUserId: userId,
+      recipientName: userName,
+      recipientChatId: targetChatId,
+      type: 'overdue_checkin_alert',
+      messageText: msg,
+      status: res.status,
+      errorDetails: res.error,
+      deliveredAt: res.ok ? new Date().toISOString() : undefined,
+    });
+
+    setNotificationBanner(
+      lang === 'km'
+        ? `បានផ្ញើសាររំលឹកវត្តមានតាម Telegram ទៅកាន់ ${userName} រួចរាល់ (${res.status})។ មិនមានការកត់ត្រាចូលស្វ័យប្រវត្តិទេ។`
+        : `Dispatched Telegram check-in alert to ${userName} (${res.status}). No auto-check in performed.`
+    );
+    setTimeout(() => setNotificationBanner(null), 4500);
+  };
+
   // Handle Automated Monthly Report Generation
   const handleGenerateReport = () => {
     setIsGenerating(true);
@@ -243,12 +319,18 @@ export const AttendanceView: React.FC<AttendanceViewProps> = ({
     }, 600);
   };
 
-  // Filtered Daily Records
+  // Filtered Daily Records with strict Employee privacy enforcement
   const filteredRecords = useMemo(() => {
-    return records.filter(r => {
+    let base = records;
+    // Strict privacy guarantee: Employees can only access their own attendance records
+    if (isEmployee) {
+      base = base.filter(r => r.userId === currentUser.id);
+    }
+
+    return base.filter(r => {
       if (filterDate && r.date !== filterDate) return false;
-      if (filterDept !== 'all' && r.departmentId !== filterDept) return false;
-      if (filterEmployee !== 'all' && r.userId !== filterEmployee) return false;
+      if (!isEmployee && filterDept !== 'all' && r.departmentId !== filterDept) return false;
+      if (!isEmployee && filterEmployee !== 'all' && r.userId !== filterEmployee) return false;
       if (filterStatus !== 'all' && r.status !== filterStatus) return false;
       if (filterShift !== 'all') {
         const isMorning = r.shiftType === 'Morning' || r.workShift?.toLowerCase().includes('morning') || r.workShift?.toLowerCase().includes('08:00');
@@ -267,12 +349,27 @@ export const AttendanceView: React.FC<AttendanceViewProps> = ({
       }
       return true;
     });
-  }, [records, filterDate, filterDept, filterEmployee, filterStatus, filterShift, searchQuery]);
+  }, [records, isEmployee, currentUser.id, filterDate, filterDept, filterEmployee, filterStatus, filterShift, searchQuery]);
 
   // Filtered Personal History for Current User
   const myHistory = useMemo(() => {
     return records.filter(r => r.userId === currentUser.id);
   }, [records, currentUser.id]);
+
+  // Personal metrics for employee monitoring
+  const myTotalWorkingHours = useMemo(() => {
+    return Math.round(myHistory.reduce((acc, r) => acc + (r.workingHours || 0), 0) * 10) / 10;
+  }, [myHistory]);
+
+  const myTotalOvertimeHours = useMemo(() => {
+    return Math.round(myHistory.reduce((acc, r) => acc + (r.overtimeHours || 0), 0) * 10) / 10;
+  }, [myHistory]);
+
+  const myPunctualityRate = useMemo(() => {
+    if (myHistory.length === 0) return 100;
+    const onTimeCount = myHistory.filter(r => r.status === 'Present' || r.status === 'Overtime').length;
+    return Math.round((onTimeCount / myHistory.length) * 100);
+  }, [myHistory]);
 
   // Today's enterprise metrics
   const todayRecords = records.filter(r => r.date === '2026-09-17');
@@ -378,7 +475,7 @@ export const AttendanceView: React.FC<AttendanceViewProps> = ({
                       {lang === 'km' ? 'បានកត់ត្រាចូលនៅ' : 'Clocked in at'} <span className="font-bold">{todayRecord.checkInTime}</span> ({todayRecord.status}) &bull; {todayRecord.workShift} &bull; {todayRecord.location || 'Office HQ'}
                       {todayRecord.networkWhitelisted && (
                         <span className="ml-1.5 px-1.5 py-0.2 rounded bg-teal-100 text-teal-800 text-[10px] font-bold">
-                          Wi-Fi Verified
+                          IP Verified
                         </span>
                       )}
                     </span>
@@ -391,12 +488,12 @@ export const AttendanceView: React.FC<AttendanceViewProps> = ({
                   )}
                 </p>
 
-                {/* Workplace Network Presence Chip */}
+                {/* Workplace IP Presence Chip */}
                 <div className="flex flex-wrap items-center gap-2 mt-2 text-xs">
                   <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-medium">
-                    <Wifi className="w-3.5 h-3.5 text-teal-600" />
-                    <span className="font-mono text-[11px] font-semibold">{currentConnection.ssid}</span>
-                    <span className="text-slate-400 font-mono text-[10px]">({currentConnection.clientIp})</span>
+                    <Globe className="w-3.5 h-3.5 text-teal-600" />
+                    <span className="font-mono text-[11px] font-semibold">{currentConnection.clientIp}</span>
+                    <span className="text-slate-400 text-[10px]">({currentConnection.networkName || 'Client IP'})</span>
                   </span>
 
                   <span
@@ -407,8 +504,8 @@ export const AttendanceView: React.FC<AttendanceViewProps> = ({
                     }`}
                   >
                     {currentConnection.isWhitelisted
-                      ? lang === 'km' ? 'Wi-Fi អនុញ្ញាត (Seamless)' : 'Whitelisted (Seamless)'
-                      : lang === 'km' ? 'បណ្តាញក្រៅ' : 'External / Remote'}
+                      ? lang === 'km' ? 'IP អនុញ្ញាត (Whitelisted)' : 'Whitelisted IP (Seamless)'
+                      : lang === 'km' ? 'IP ក្រៅប្រព័ន្ធ' : 'External / Remote IP'}
                   </span>
 
                   {currentConnection.isWhitelisted && networkSettings.seamlessCheckInEnabled && (
@@ -498,13 +595,13 @@ export const AttendanceView: React.FC<AttendanceViewProps> = ({
                         </button>
                       </div>
 
-                      {/* Workplace Internet Connection Status */}
+                      {/* Workplace IP Connection Status */}
                       <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100 text-[11px]">
                         <div className="flex items-center space-x-2 text-slate-600 dark:text-slate-400">
-                          <Wifi className="w-3.5 h-3.5 text-teal-600" />
+                          <Globe className="w-3.5 h-3.5 text-teal-600" />
                           <span>
-                            {lang === 'km' ? 'បណ្តាញភ្ជាប់:' : 'Connected Network:'}{' '}
-                            <strong className="text-slate-800 dark:text-slate-200">{currentConnection.ssid}</strong> ({currentConnection.clientIp})
+                            {lang === 'km' ? 'អាសយដ្ឋាន IP:' : 'Client IP:'}{' '}
+                            <strong className="text-slate-800 dark:text-slate-200">{currentConnection.clientIp}</strong> ({currentConnection.networkName || 'Workplace IP'})
                           </span>
                         </div>
                         <span
@@ -515,8 +612,8 @@ export const AttendanceView: React.FC<AttendanceViewProps> = ({
                           }`}
                         >
                           {currentConnection.isWhitelisted
-                            ? (lang === 'km' ? 'បណ្តាញអនុញ្ញាត' : 'Admin Approved Internet')
-                            : (lang === 'km' ? 'បណ្តាញក្រៅ' : 'External Internet')}
+                            ? (lang === 'km' ? 'IP អនុញ្ញាត' : 'Whitelisted IP')
+                            : (lang === 'km' ? 'IP ក្រៅប្រព័ន្ធ' : 'External IP')}
                         </span>
                       </div>
                     </div>
@@ -584,57 +681,158 @@ export const AttendanceView: React.FC<AttendanceViewProps> = ({
         </div>
 
         {/* Quick KPI Counters & Shift Distribution */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mt-4">
-          <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
-            <span className="text-[11px] font-medium text-slate-500">
-              {lang === 'km' ? 'សរុបថ្ងៃនេះ' : "Today's Total"}
-            </span>
-            <div className="flex items-baseline space-x-1.5 mt-0.5">
-              <span className="text-base font-bold text-slate-900">{totalLoggedCount} / {totalEmployees}</span>
-              <span className="text-[11px] font-semibold text-emerald-600">({todayCompliancePct}%)</span>
+        {isEmployee ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mt-4">
+            <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
+              <span className="text-[11px] font-medium text-slate-500">
+                {lang === 'km' ? 'ស្ថានភាពថ្ងៃនេះ' : "Today's Status"}
+              </span>
+              <div className="text-xs font-bold text-slate-900 mt-1 truncate">
+                {todayRecord?.checkOutTime ? (
+                  <span className="text-slate-600 font-semibold">{lang === 'km' ? 'បានបញ្ចប់វេន' : 'Shift Completed'}</span>
+                ) : todayRecord?.checkInTime ? (
+                  <span className="text-emerald-700">{lang === 'km' ? 'បានចូលធ្វើការ' : 'Clocked In'} ({todayRecord.checkInTime})</span>
+                ) : (
+                  <span className="text-amber-700">{lang === 'km' ? 'មិនទាន់កត់ត្រា' : 'Not Clocked In'}</span>
+                )}
+              </div>
+            </div>
+
+            <div className="p-3 bg-amber-50/50 rounded-lg border border-amber-200/80">
+              <span className="text-[11px] font-medium text-amber-800 flex items-center space-x-1">
+                <Sun className="w-3 h-3 text-amber-500" />
+                <span>{lang === 'km' ? 'វេនការងារ' : 'Assigned Shift'}</span>
+              </span>
+              <div className="text-xs font-bold text-amber-900 mt-1 truncate">
+                {todayRecord?.workShift || 'Morning (08:00 - 16:30)'}
+              </div>
+            </div>
+
+            <div className="p-3 bg-emerald-50/50 rounded-lg border border-emerald-200/80">
+              <span className="text-[11px] font-medium text-emerald-800">
+                {lang === 'km' ? 'អត្រាអនុលោមភាព' : 'My Compliance'}
+              </span>
+              <div className="text-base font-bold text-emerald-700 mt-0.5">
+                {myPunctualityRate}% <span className="text-[10px] font-normal text-slate-500">{lang === 'km' ? 'ទាន់ពេល' : 'punctual'}</span>
+              </div>
+            </div>
+
+            <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
+              <span className="text-[11px] font-medium text-slate-500">
+                {lang === 'km' ? 'ម៉ោងបំពេញការងារ' : 'Logged Hours'}
+              </span>
+              <div className="text-base font-bold text-slate-900 mt-0.5">
+                {myTotalWorkingHours}h <span className="text-[10px] font-normal text-slate-500">{lang === 'km' ? 'ខែនេះ' : 'month'}</span>
+              </div>
+            </div>
+
+            <div className="p-3 bg-indigo-50/50 rounded-lg border border-indigo-200/80">
+              <span className="text-[11px] font-medium text-indigo-800 flex items-center space-x-1">
+                <Moon className="w-3 h-3 text-indigo-500" />
+                <span>{lang === 'km' ? 'ម៉ោងបន្ថែម (OT)' : 'Overtime Logged'}</span>
+              </span>
+              <div className="text-base font-bold text-indigo-900 mt-0.5">
+                +{myTotalOvertimeHours}h
+              </div>
+            </div>
+
+            <div className="p-3 bg-blue-50/50 rounded-lg border border-blue-200/80">
+              <span className="text-[11px] font-medium text-blue-800 flex items-center space-x-1">
+                <Lock className="w-3 h-3 text-blue-600" />
+                <span>{lang === 'km' ? 'ភាពឯកជន' : 'Privacy Protection'}</span>
+              </span>
+              <div className="text-xs font-bold text-blue-900 mt-1 truncate">
+                {lang === 'km' ? 'ផ្ទាល់ខ្លួនប៉ុណ្ណោះ' : 'Self-Access Only'}
+              </div>
             </div>
           </div>
-          <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
-            <span className="text-[11px] font-medium text-slate-500">
-              {lang === 'km' ? 'មានវត្តមាន & សកម្ម' : 'Present & Active'}
-            </span>
-            <div className="text-base font-bold text-emerald-700 mt-0.5">
-              {presentCount} <span className="text-xs font-normal text-slate-500">{lang === 'km' ? 'នាក់' : 'staff'}</span>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mt-4">
+            <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
+              <span className="text-[11px] font-medium text-slate-500">
+                {lang === 'km' ? 'សរុបថ្ងៃនេះ' : "Today's Total"}
+              </span>
+              <div className="flex items-baseline space-x-1.5 mt-0.5">
+                <span className="text-base font-bold text-slate-900">{totalLoggedCount} / {totalEmployees}</span>
+                <span className="text-[11px] font-semibold text-emerald-600">({todayCompliancePct}%)</span>
+              </div>
+            </div>
+            <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
+              <span className="text-[11px] font-medium text-slate-500">
+                {lang === 'km' ? 'មានវត្តមាន & សកម្ម' : 'Present & Active'}
+              </span>
+              <div className="text-base font-bold text-emerald-700 mt-0.5">
+                {presentCount} <span className="text-xs font-normal text-slate-500">{lang === 'km' ? 'នាក់' : 'staff'}</span>
+              </div>
+            </div>
+            <div className="p-3 bg-amber-50/50 rounded-lg border border-amber-200/80">
+              <span className="text-[11px] font-medium text-amber-800 flex items-center space-x-1">
+                <Sun className="w-3 h-3 text-amber-500" />
+                <span>{t.morningShiftShort || 'Morning Shift'}</span>
+              </span>
+              <div className="text-base font-bold text-amber-900 mt-0.5">
+                {morningShiftCount} <span className="text-xs font-normal text-slate-500">{lang === 'km' ? 'នាក់' : 'staff'} (08:00)</span>
+              </div>
+            </div>
+            <div className="p-3 bg-indigo-50/50 rounded-lg border border-indigo-200/80">
+              <span className="text-[11px] font-medium text-indigo-800 flex items-center space-x-1">
+                <Moon className="w-3 h-3 text-indigo-500" />
+                <span>{t.eveningShiftShort || 'Evening Shift'}</span>
+              </span>
+              <div className="text-base font-bold text-indigo-900 mt-0.5">
+                {eveningShiftCount} <span className="text-xs font-normal text-slate-500">{lang === 'km' ? 'នាក់' : 'staff'} (14:00)</span>
+              </div>
+            </div>
+            <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
+              <span className="text-[11px] font-medium text-slate-500">
+                {lang === 'km' ? 'មកយឺត' : 'Late Arrivals'}
+              </span>
+              <div className="text-base font-bold text-amber-600 mt-0.5">
+                {lateCount} <span className="text-xs font-normal text-slate-500">{lang === 'km' ? 'នាក់' : 'flagged'}</span>
+              </div>
+            </div>
+            <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
+              <span className="text-[11px] font-medium text-slate-500">
+                {lang === 'km' ? 'ច្បាប់ឈប់សម្រាក' : 'On Approved Leave'}
+              </span>
+              <div className="text-base font-bold text-blue-600 mt-0.5">
+                {leaveCount} <span className="text-xs font-normal text-slate-500">{lang === 'km' ? 'នាក់' : 'staff'}</span>
+              </div>
             </div>
           </div>
-          <div className="p-3 bg-amber-50/50 rounded-lg border border-amber-200/80">
-            <span className="text-[11px] font-medium text-amber-800 flex items-center space-x-1">
-              <Sun className="w-3 h-3 text-amber-500" />
-              <span>{t.morningShiftShort || 'Morning Shift'}</span>
-            </span>
-            <div className="text-base font-bold text-amber-900 mt-0.5">
-              {morningShiftCount} <span className="text-xs font-normal text-slate-500">{lang === 'km' ? 'នាក់' : 'staff'} (08:00)</span>
+        )}
+
+        {/* Attendance Privacy Protection & Assistance Notice Banner */}
+        <div className="mt-4 p-4 rounded-xl border border-blue-200/90 bg-gradient-to-r from-blue-50/90 via-indigo-50/40 to-slate-50 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+          <div className="flex items-start space-x-3">
+            <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center shrink-0 mt-0.5">
+              <ShieldCheck className="w-4 h-4" />
+            </div>
+            <div className="space-y-0.5">
+              <div className="flex items-center space-x-2">
+                <span className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                  {lang === 'km' ? 'គោលការណ៍ឯកជនភាពវត្តមានបុគ្គលិក' : 'Employee Attendance Privacy Policy'}
+                </span>
+                <span className="px-2 py-0.2 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200">
+                  {isEmployee ? (lang === 'km' ? 'ចូលមើលផ្ទាល់ខ្លួនប៉ុណ្ណោះ' : 'Self-Access Only') : (lang === 'km' ? 'សិទ្ធិគ្រប់គ្រងស្ថាប័ន' : 'Supervisor / Admin Authorized')}
+                </span>
+              </div>
+              <p className="text-xs text-slate-600 leading-relaxed max-w-3xl">
+                {lang === 'km'
+                  ? 'បុគ្គលិកអាចចូលមើលបានតែកំណត់ត្រាវត្តមានផ្ទាល់ខ្លួនរបស់ពួកគេប៉ុណ្ណោះ។ ការណ៍នេះធានាភាពឯកជន និងអនុញ្ញាតឱ្យបុគ្គលម្នាក់ៗតាមដានវត្តមានរបស់ខ្លួនដោយគ្មានការរំខាន។ ប្រសិនបើលោកអ្នកត្រូវការពិនិត្យ ឬគ្រប់គ្រងវត្តមានសម្រាប់អ្នកដទៃ សូមទាក់ទងអ្នកគ្រប់គ្រងផ្ទាល់ ឬផ្នែកធនធានមនុស្ស (HR) ដើម្បីទទួលបានជំនួយ។'
+                  : 'Employees can only access their own attendance records. This ensures privacy and allows individuals to monitor their attendance without interference. If you need to check or manage attendance for others, please contact your supervisor or HR department for assistance.'}
+              </p>
             </div>
           </div>
-          <div className="p-3 bg-indigo-50/50 rounded-lg border border-indigo-200/80">
-            <span className="text-[11px] font-medium text-indigo-800 flex items-center space-x-1">
-              <Moon className="w-3 h-3 text-indigo-500" />
-              <span>{t.eveningShiftShort || 'Evening Shift'}</span>
-            </span>
-            <div className="text-base font-bold text-indigo-900 mt-0.5">
-              {eveningShiftCount} <span className="text-xs font-normal text-slate-500">{lang === 'km' ? 'នាក់' : 'staff'} (14:00)</span>
-            </div>
-          </div>
-          <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
-            <span className="text-[11px] font-medium text-slate-500">
-              {lang === 'km' ? 'មកយឺត' : 'Late Arrivals'}
-            </span>
-            <div className="text-base font-bold text-amber-600 mt-0.5">
-              {lateCount} <span className="text-xs font-normal text-slate-500">{lang === 'km' ? 'នាក់' : 'flagged'}</span>
-            </div>
-          </div>
-          <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
-            <span className="text-[11px] font-medium text-slate-500">
-              {lang === 'km' ? 'ច្បាប់ឈប់សម្រាក' : 'On Approved Leave'}
-            </span>
-            <div className="text-base font-bold text-blue-600 mt-0.5">
-              {leaveCount} <span className="text-xs font-normal text-slate-500">{lang === 'km' ? 'នាក់' : 'staff'}</span>
-            </div>
+
+          <div className="shrink-0 self-start sm:self-center">
+            <button
+              onClick={() => setIsContactSupervisorModalOpen(true)}
+              className="flex items-center space-x-1.5 px-3.5 py-2 text-xs font-bold text-blue-700 bg-white hover:bg-blue-50 border border-blue-300 rounded-lg shadow-xs transition active:scale-95 whitespace-nowrap"
+            >
+              <HelpCircle className="w-3.5 h-3.5 text-blue-600" />
+              <span>{lang === 'km' ? 'ទាក់ទងអ្នកគ្រប់គ្រង ឬ HR' : 'Contact Supervisor / HR'}</span>
+            </button>
           </div>
         </div>
       </div>
@@ -679,7 +877,7 @@ export const AttendanceView: React.FC<AttendanceViewProps> = ({
             <span>{lang === 'km' ? 'កំណត់ត្រាវត្តមានរបស់ខ្ញុំ' : 'My Attendance Log'}</span>
           </button>
 
-          {/* Only Admin can manage Internet to accept checkin and checkout */}
+          {/* Only Admin can manage IP whitelist to accept checkin and checkout */}
           {isSuperOrAdmin && (
             <button
               id="tab-btn-network-whitelist-main"
@@ -690,8 +888,8 @@ export const AttendanceView: React.FC<AttendanceViewProps> = ({
                   : 'text-teal-800 bg-teal-50 hover:bg-teal-100 hover:text-teal-900 border border-teal-200/80'
               }`}
             >
-              <Wifi className="w-4 h-4 text-teal-600" />
-              <span>{lang === 'km' ? 'គ្រប់គ្រងបណ្តាញ Internet (Admin)' : 'Manage Internet (Admin)'}</span>
+              <Globe className="w-4 h-4 text-teal-600" />
+              <span>{lang === 'km' ? 'គ្រប់គ្រង IP អនុញ្ញាត (Admin)' : 'Manage Allowed IPs (Admin)'}</span>
               <span className="px-1.5 py-0.2 bg-teal-200 text-teal-900 rounded-full text-[10px] font-bold">
                 {currentConnection.isWhitelisted ? 'Whitelisted' : 'External'}
               </span>
@@ -702,6 +900,27 @@ export const AttendanceView: React.FC<AttendanceViewProps> = ({
         {/* Action buttons */}
         {activeTab === 'daily' && (
           <div className="flex items-center space-x-2">
+            {isEmployee && (
+              <button
+                id="btn-contact-supervisor-attendance"
+                onClick={() => setIsContactSupervisorModalOpen(true)}
+                className="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 hover:bg-blue-100 rounded-lg transition"
+                title={lang === 'km' ? 'ទាក់ទងអ្នកគ្រប់គ្រង ឬ HR សម្រាប់ជំនួយវត្តមាន' : 'Contact your supervisor or HR department for attendance assistance'}
+              >
+                <HelpCircle className="w-3.5 h-3.5 text-blue-600" />
+                <span>{lang === 'km' ? 'ជំនួយពីអ្នកគ្រប់គ្រង / HR' : 'Supervisor / HR Assistance'}</span>
+              </button>
+            )}
+            <button
+              id="btn-telegram-attendance-alerts"
+              onClick={() => setIsTelegramModalOpen(true)}
+              className="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-semibold text-sky-800 bg-sky-50 border border-sky-200 hover:bg-sky-100 rounded-lg transition shadow-2xs"
+              title={lang === 'km' ? 'ប្រព័ន្ធជូនដំណឹងមុនម៉ោងវេនការងារ និងវត្តមានតាម Telegram (Admin Bot & Channel ID)' : 'Telegram Bot & Channel Settings • Advance Pre-Shift Alerts'}
+            >
+              <Send className="w-3.5 h-3.5 text-sky-600" />
+              <span>{lang === 'km' ? 'Telegram & ជូនដំណឹងមុនម៉ោង' : 'Telegram & Pre-Shift Alerts'}</span>
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+            </button>
             <button
               onClick={() => setIsShiftSchedulesModalOpen(true)}
               className="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-50 border border-slate-200 hover:bg-slate-100 rounded-lg transition"
@@ -741,16 +960,23 @@ export const AttendanceView: React.FC<AttendanceViewProps> = ({
               </div>
 
               {/* Department */}
-              <select
-                value={filterDept}
-                onChange={e => setFilterDept(e.target.value)}
-                className="text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden bg-white"
-              >
-                <option value="all">{lang === 'km' ? 'គ្រប់នាយកដ្ឋាន' : 'All Departments'}</option>
-                {departments.map(d => (
-                  <option key={d.id} value={d.id}>{d.name}</option>
-                ))}
-              </select>
+              {isEmployee ? (
+                <div className="flex items-center space-x-1.5 px-2.5 py-1.5 bg-slate-100 border border-slate-200 rounded-lg text-xs text-slate-700">
+                  <Building2 className="w-3.5 h-3.5 text-slate-500" />
+                  <span className="font-semibold">{departments.find(d => d.id === currentUser.departmentId)?.name || 'Department'}</span>
+                </div>
+              ) : (
+                <select
+                  value={filterDept}
+                  onChange={e => setFilterDept(e.target.value)}
+                  className="text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden bg-white"
+                >
+                  <option value="all">{lang === 'km' ? 'គ្រប់នាយកដ្ឋាន' : 'All Departments'}</option>
+                  {departments.map(d => (
+                    <option key={d.id} value={d.id}>{d.name}</option>
+                  ))}
+                </select>
+              )}
 
               {/* Status */}
               <select
@@ -779,16 +1005,24 @@ export const AttendanceView: React.FC<AttendanceViewProps> = ({
               </select>
 
               {/* Employee */}
-              <select
-                value={filterEmployee}
-                onChange={e => setFilterEmployee(e.target.value)}
-                className="text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden bg-white"
-              >
-                <option value="all">{lang === 'km' ? 'បុគ្គលិកទាំងអស់' : 'All Employees'}</option>
-                {users.map(u => (
-                  <option key={u.id} value={u.id}>{u.name}</option>
-                ))}
-              </select>
+              {isEmployee ? (
+                <div className="flex items-center space-x-1.5 px-3 py-1.5 bg-blue-50 border border-blue-200 rounded-lg text-xs font-semibold text-blue-800 shadow-2xs">
+                  <Lock className="w-3.5 h-3.5 text-blue-600" />
+                  <span>{currentUser.name}</span>
+                  <span className="text-[10px] text-blue-600/70 font-normal">({lang === 'km' ? 'កំណត់ត្រាផ្ទាល់ខ្លួន' : 'Self Only'})</span>
+                </div>
+              ) : (
+                <select
+                  value={filterEmployee}
+                  onChange={e => setFilterEmployee(e.target.value)}
+                  className="text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden bg-white"
+                >
+                  <option value="all">{lang === 'km' ? 'បុគ្គលិកទាំងអស់' : 'All Employees'}</option>
+                  {users.map(u => (
+                    <option key={u.id} value={u.id}>{u.name}</option>
+                  ))}
+                </select>
+              )}
             </div>
 
             {/* Search */}
@@ -939,7 +1173,7 @@ export const AttendanceView: React.FC<AttendanceViewProps> = ({
                                 </span>
                               )}
                               <span className="text-slate-400 font-mono">
-                                {rec.checkInMethod?.replace('Manual Self-Attestation (Zero-Tracking)', 'Self-Attest')}
+                                {(rec.checkInMethod || '').replace('Manual Self-Attestation (Zero-Tracking)', 'Self-Attest')}
                               </span>
                             </div>
                           </td>
@@ -948,23 +1182,43 @@ export const AttendanceView: React.FC<AttendanceViewProps> = ({
                           </td>
                           <td className="py-3 px-3 text-right">
                             <div className="flex items-center justify-end space-x-1">
-                              {(currentUser.role === 'Super Admin' || currentUser.role === 'Administrator' || currentUser.role === 'Department Manager') && (
-                                <button
-                                  onClick={() => handleOpenEditShift(rec)}
-                                  className="p-1 text-slate-400 hover:text-blue-600 rounded-md hover:bg-blue-50 transition"
-                                  title="Edit shift & attendance"
-                                >
-                                  <Pencil className="w-3.5 h-3.5" />
-                                </button>
-                              )}
-                              {(currentUser.role === 'Super Admin' || currentUser.role === 'Administrator') && (
-                                <button
-                                  onClick={(e) => handleDeleteRecord(rec, e)}
-                                  className="p-1 text-slate-400 hover:text-rose-600 rounded-md hover:bg-slate-100 transition"
-                                  title={lang === 'km' ? 'លុបកំណត់ត្រាវត្តមាន' : 'Delete record'}
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
+                              {isEmployee ? (
+                                <span className="inline-flex items-center space-x-1 text-[10px] font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                                  <Lock className="w-2.5 h-2.5 text-blue-500" />
+                                  <span>{lang === 'km' ? 'ផ្ទាល់ខ្លួន' : 'My Record'}</span>
+                                </span>
+                              ) : (
+                                <>
+                                  <button
+                                    onClick={() => handleSendTelegramReminderToUser(rec.userId, rec.userName)}
+                                    className="p-1 text-slate-400 hover:text-sky-600 rounded-md hover:bg-sky-50 transition"
+                                    title={
+                                      lang === 'km'
+                                        ? `ផ្ញើសាររំលឹកវត្តមានតាម Telegram ទៅកាន់ ${rec.userName} (មិនកត់ត្រាស្វ័យប្រវត្តិ)`
+                                        : `Send Telegram check-in reminder to ${rec.userName} (No auto-check in)`
+                                    }
+                                  >
+                                    <Send className="w-3.5 h-3.5 text-sky-600" />
+                                  </button>
+                                  {(currentUser.role === 'Super Admin' || currentUser.role === 'Administrator' || currentUser.role === 'Department Manager') && (
+                                    <button
+                                      onClick={() => handleOpenEditShift(rec)}
+                                      className="p-1 text-slate-400 hover:text-blue-600 rounded-md hover:bg-blue-50 transition"
+                                      title="Edit shift & attendance"
+                                    >
+                                      <Pencil className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+                                  {(currentUser.role === 'Super Admin' || currentUser.role === 'Administrator') && (
+                                    <button
+                                      onClick={(e) => handleDeleteRecord(rec, e)}
+                                      className="p-1 text-slate-400 hover:text-rose-600 rounded-md hover:bg-slate-100 transition"
+                                      title={lang === 'km' ? 'លុបកំណត់ត្រាវត្តមាន' : 'Delete record'}
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+                                </>
                               )}
                             </div>
                           </td>
@@ -982,80 +1236,108 @@ export const AttendanceView: React.FC<AttendanceViewProps> = ({
       {/* TAB 2: AUTOMATED MONTHLY REPORTS */}
       {activeTab === 'monthly-reports' && (
         <div className="space-y-6">
-          {/* Generator Control Card */}
-          <div className="bg-gradient-to-br from-blue-900 via-indigo-900 to-slate-900 text-white p-6 rounded-xl shadow-md">
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-              <div className="space-y-1.5 max-w-xl">
-                <div className="inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 text-xs font-semibold border border-blue-400/30">
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>{lang === 'km' ? 'ការវិភាគថ្នាក់ដឹកនាំស្វ័យប្រវត្តិ' : 'Automated Executive Analytics'}</span>
+          {/* Employee Privacy Guidance or Generator Control Card */}
+          {isEmployee ? (
+            <div className="bg-gradient-to-r from-blue-900 via-indigo-950 to-slate-900 text-white p-6 rounded-xl shadow-md flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+              <div className="space-y-2 max-w-2xl">
+                <div className="inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full bg-blue-500/30 text-blue-200 text-xs font-semibold border border-blue-400/30">
+                  <Lock className="w-3 h-3 text-blue-300" />
+                  <span>{lang === 'km' ? 'គោលការណ៍ឯកជនភាពវត្តមានបុគ្គលិក' : 'Employee Privacy & Access Control'}</span>
                 </div>
-                <h2 className="text-lg font-bold">
-                  {t.autoGenerate || (lang === 'km' ? '⚡ បង្កើតរបាយការណ៍វត្តមានប្រចាំខែស្វ័យប្រវត្តិ' : '⚡ Auto-Generate Monthly Attendance Report')}
-                </h2>
+                <h3 className="text-base font-bold">
+                  {lang === 'km' ? 'ការគ្រប់គ្រង និងទាញយករបាយការណ៍សង្ខេបស្ថាប័ន' : 'Institutional Monthly Reports & Individual Audits'}
+                </h3>
                 <p className="text-xs text-slate-300 leading-relaxed">
                   {lang === 'km'
-                    ? 'ចងក្រងការកត់ត្រាវត្តមានប្រចាំថ្ងៃទាំងអស់ដោយស្វ័យប្រវត្តិ គណនាអត្រាអនុលោមភាពវត្តមានបុគ្គលិក ធ្វើសវនកម្មម៉ោងបន្ថែម និងភ្ជាប់ជាមួយលទ្ធផលសកម្មភាពផែនការសកម្មភាព។'
-                    : 'Automatically compiles all daily punches, calculates employee attendance compliance rates, audits logged overtime hours, and cross-references deliverables with completed action plan activities.'}
+                    ? 'បុគ្គលិកអាចចូលមើលបានតែកំណត់ត្រាវត្តមានផ្ទាល់ខ្លួនរបស់ពួកគេប៉ុណ្ណោះ។ ការណ៍នេះធានាភាពឯកជន និងអនុញ្ញាតឱ្យបុគ្គលម្នាក់ៗតាមដានវត្តមានរបស់ខ្លួនដោយគ្មានការរំខាន។ ប្រសិនបើលោកអ្នកត្រូវការពិនិត្យ ឬគ្រប់គ្រងវត្តមានសម្រាប់អ្នកដទៃ សូមទាក់ទងអ្នកគ្រប់គ្រងផ្ទាល់ ឬផ្នែកធនធានមនុស្ស (HR) ដើម្បីទទួលបានជំនួយ។'
+                    : 'Employees can only access their own attendance records. This ensures privacy and allows individuals to monitor their attendance without interference. If you need to check or manage attendance for others, please contact your supervisor or HR department for assistance.'}
                 </p>
               </div>
-
-              {/* Generator Controls */}
-              <div className="flex flex-wrap items-center gap-3 bg-white/10 p-3.5 rounded-xl backdrop-blur-xs border border-white/10 shrink-0">
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-200 mb-1">
-                    {lang === 'km' ? 'ខែ' : 'Month'}
-                  </label>
-                  <select
-                    value={reportGenMonth}
-                    onChange={e => setReportGenMonth(e.target.value)}
-                    className="bg-slate-800 text-white text-xs px-3 py-1.5 rounded-lg border border-slate-700 focus:outline-hidden focus:border-blue-400"
-                  >
-                    <option value="2026-09">{lang === 'km' ? 'កញ្ញា ២០២៦' : 'September 2026'}</option>
-                    <option value="2026-08">{lang === 'km' ? 'សីហា ២០២៦' : 'August 2026'}</option>
-                    <option value="2026-07">{lang === 'km' ? 'កក្កដា ២០២៦' : 'July 2026'}</option>
-                    <option value="2026-06">{lang === 'km' ? 'មិថុនា ២០២៦' : 'June 2026'}</option>
-                  </select>
+              <div className="shrink-0">
+                <button
+                  onClick={() => setIsContactSupervisorModalOpen(true)}
+                  className="flex items-center space-x-2 px-4 py-2.5 text-xs font-bold text-slate-900 bg-white hover:bg-slate-100 rounded-lg shadow-sm transition active:scale-95"
+                >
+                  <HelpCircle className="w-4 h-4 text-blue-600" />
+                  <span>{lang === 'km' ? 'ទាក់ទងអ្នកគ្រប់គ្រង ឬ HR' : 'Contact Supervisor / HR'}</span>
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="bg-gradient-to-br from-blue-900 via-indigo-900 to-slate-900 text-white p-6 rounded-xl shadow-md">
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+                <div className="space-y-1.5 max-w-xl">
+                  <div className="inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 text-xs font-semibold border border-blue-400/30">
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>{lang === 'km' ? 'ការវិភាគថ្នាក់ដឹកនាំស្វ័យប្រវត្តិ' : 'Automated Executive Analytics'}</span>
+                  </div>
+                  <h2 className="text-lg font-bold">
+                    {t.autoGenerate || (lang === 'km' ? '⚡ បង្កើតរបាយការណ៍វត្តមានប្រចាំខែស្វ័យប្រវត្តិ' : '⚡ Auto-Generate Monthly Attendance Report')}
+                  </h2>
+                  <p className="text-xs text-slate-300 leading-relaxed">
+                    {lang === 'km'
+                      ? 'ចងក្រងការកត់ត្រាវត្តមានប្រចាំថ្ងៃទាំងអស់ដោយស្វ័យប្រវត្តិ គណនាអត្រាអនុលោមភាពវត្តមានបុគ្គលិក ធ្វើសវនកម្មម៉ោងបន្ថែម និងភ្ជាប់ជាមួយលទ្ធផលសកម្មភាពផែនការសកម្មភាព។'
+                      : 'Automatically compiles all daily punches, calculates employee attendance compliance rates, audits logged overtime hours, and cross-references deliverables with completed action plan activities.'}
+                  </p>
                 </div>
 
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-200 mb-1">
-                    {lang === 'km' ? 'នាយកដ្ឋាន' : 'Department'}
-                  </label>
-                  <select
-                    value={reportGenDept}
-                    onChange={e => setReportGenDept(e.target.value)}
-                    className="bg-slate-800 text-white text-xs px-3 py-1.5 rounded-lg border border-slate-700 focus:outline-hidden focus:border-blue-400"
-                  >
-                    <option value="all">{lang === 'km' ? 'គ្រប់នាយកដ្ឋាន' : 'All Departments'}</option>
-                    {departments.map(d => (
-                      <option key={d.id} value={d.id}>{d.name}</option>
-                    ))}
-                  </select>
-                </div>
+                {/* Generator Controls */}
+                <div className="flex flex-wrap items-center gap-3 bg-white/10 p-3.5 rounded-xl backdrop-blur-xs border border-white/10 shrink-0">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-200 mb-1">
+                      {lang === 'km' ? 'ខែ' : 'Month'}
+                    </label>
+                    <select
+                      value={reportGenMonth}
+                      onChange={e => setReportGenMonth(e.target.value)}
+                      className="bg-slate-800 text-white text-xs px-3 py-1.5 rounded-lg border border-slate-700 focus:outline-hidden focus:border-blue-400"
+                    >
+                      <option value="2026-09">{lang === 'km' ? 'កញ្ញា ២០២៦' : 'September 2026'}</option>
+                      <option value="2026-08">{lang === 'km' ? 'សីហា ២០២៦' : 'August 2026'}</option>
+                      <option value="2026-07">{lang === 'km' ? 'កក្កដា ២០២៦' : 'July 2026'}</option>
+                      <option value="2026-06">{lang === 'km' ? 'មិថុនា ២០២៦' : 'June 2026'}</option>
+                    </select>
+                  </div>
 
-                <div className="self-end pt-2 sm:pt-0">
-                  <button
-                    onClick={handleGenerateReport}
-                    disabled={isGenerating}
-                    className="flex items-center space-x-2 px-4 py-2 text-xs font-bold text-slate-900 bg-white hover:bg-slate-100 rounded-lg shadow-sm transition active:scale-95 disabled:opacity-75"
-                  >
-                    {isGenerating ? (
-                      <>
-                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                        <span>{lang === 'km' ? 'កំពុងចងក្រង...' : 'Compiling...'}</span>
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles className="w-3.5 h-3.5 text-blue-600" />
-                        <span>{lang === 'km' ? 'បង្កើតរបាយការណ៍សង្ខេប' : 'Generate Dossier'}</span>
-                      </>
-                    )}
-                  </button>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-200 mb-1">
+                      {lang === 'km' ? 'នាយកដ្ឋាន' : 'Department'}
+                    </label>
+                    <select
+                      value={reportGenDept}
+                      onChange={e => setReportGenDept(e.target.value)}
+                      className="bg-slate-800 text-white text-xs px-3 py-1.5 rounded-lg border border-slate-700 focus:outline-hidden focus:border-blue-400"
+                    >
+                      <option value="all">{lang === 'km' ? 'គ្រប់នាយកដ្ឋាន' : 'All Departments'}</option>
+                      {departments.map(d => (
+                        <option key={d.id} value={d.id}>{d.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="self-end pt-2 sm:pt-0">
+                    <button
+                      onClick={handleGenerateReport}
+                      disabled={isGenerating}
+                      className="flex items-center space-x-2 px-4 py-2 text-xs font-bold text-slate-900 bg-white hover:bg-slate-100 rounded-lg shadow-sm transition active:scale-95 disabled:opacity-75"
+                    >
+                      {isGenerating ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          <span>{lang === 'km' ? 'កំពុងចងក្រង...' : 'Compiling...'}</span>
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="w-3.5 h-3.5 text-blue-600" />
+                          <span>{lang === 'km' ? 'បង្កើតរបាយការណ៍សង្ខេប' : 'Generate Dossier'}</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
+          )}
 
           {/* Published Reports Catalog */}
           <div className="space-y-4">
@@ -1294,6 +1576,14 @@ export const AttendanceView: React.FC<AttendanceViewProps> = ({
         lang={lang}
       />
 
+      {/* Contact Supervisor or HR Assistance Modal */}
+      <ContactSupervisorModal
+        isOpen={isContactSupervisorModalOpen}
+        onClose={() => setIsContactSupervisorModalOpen(false)}
+        currentUser={currentUser}
+        lang={lang}
+      />
+
       {/* CONFIRM DELETE ATTENDANCE RECORD MODAL */}
       {recordToDelete && (
         <div 
@@ -1347,6 +1637,18 @@ export const AttendanceView: React.FC<AttendanceViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* Telegram Attendance Notification & Bot Alerts Modal */}
+      <TelegramNotificationModal
+        isOpen={isTelegramModalOpen}
+        onClose={() => setIsTelegramModalOpen(false)}
+        currentUser={currentUser}
+        lang={lang}
+        onToast={(msg) => {
+          setNotificationBanner(msg);
+          setTimeout(() => setNotificationBanner(null), 4500);
+        }}
+      />
     </div>
   );
 };

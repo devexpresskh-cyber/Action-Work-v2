@@ -26,8 +26,13 @@ import {
   NetworkSettingsConfig,
   NetworkAccessLog,
   CurrentNetworkConnection,
+  PlanCollaborationReview,
+  PriorityLevel,
+  TelegramNotificationConfig,
+  TelegramNotificationLog,
 } from '../types';
 import { canRoleAccessTab, MENU_RBAC_POLICY } from './rbac';
+import { defaultTelegramConfig, initialTelegramLogs } from '../data/telegramData';
 import {
   initialUsers,
   initialDepartments,
@@ -80,6 +85,8 @@ const STORAGE_KEYS = {
   NETWORK_SETTINGS: 'apms_network_settings_v1',
   NETWORK_LOGS: 'apms_network_logs_v1',
   CURRENT_CONNECTION: 'apms_current_connection_v1',
+  TELEGRAM_CONFIG: 'apms_telegram_config_v1',
+  TELEGRAM_LOGS: 'apms_telegram_logs_v1',
 };
 
 export const DEFAULT_WORK_SHIFTS: Record<string, WorkShiftConfig> = {
@@ -151,6 +158,8 @@ class DatabaseService {
   private networkLogs: NetworkAccessLog[] = [...initialNetworkAccessLogs];
   private currentConnection: CurrentNetworkConnection = { ...simulatedConnectionProfiles[0] };
   private currentUserId: string = 'usr-1'; // Default to Super Admin
+  private telegramConfig: TelegramNotificationConfig = { ...defaultTelegramConfig };
+  private telegramLogs: TelegramNotificationLog[] = [...initialTelegramLogs];
 
   constructor() {
     this.loadFromStorage();
@@ -253,6 +262,27 @@ class DatabaseService {
       const storedConn = localStorage.getItem(STORAGE_KEYS.CURRENT_CONNECTION);
       this.currentConnection = storedConn ? JSON.parse(storedConn) : { ...simulatedConnectionProfiles[0] };
 
+      const storedTelConfig = localStorage.getItem(STORAGE_KEYS.TELEGRAM_CONFIG);
+      let parsedTelConfig: any = {};
+      try {
+        parsedTelConfig = storedTelConfig ? JSON.parse(storedTelConfig) : {};
+      } catch {
+        parsedTelConfig = {};
+      }
+      this.telegramConfig = {
+        ...defaultTelegramConfig,
+        ...(parsedTelConfig || {}),
+      };
+
+      const storedTelLogs = localStorage.getItem(STORAGE_KEYS.TELEGRAM_LOGS);
+      let parsedTelLogs: any = null;
+      try {
+        parsedTelLogs = storedTelLogs ? JSON.parse(storedTelLogs) : null;
+      } catch {
+        parsedTelLogs = null;
+      }
+      this.telegramLogs = Array.isArray(parsedTelLogs) ? parsedTelLogs : [...initialTelegramLogs];
+
       const storedUserId = localStorage.getItem(STORAGE_KEYS.CURRENT_USER_ID);
       if (storedUserId && this.users.find(u => u.id === storedUserId)) {
         this.currentUserId = storedUserId;
@@ -285,6 +315,8 @@ class DatabaseService {
     this.networkSettings = { ...defaultNetworkSettings };
     this.networkLogs = [...initialNetworkAccessLogs];
     this.currentConnection = { ...simulatedConnectionProfiles[0] };
+    this.telegramConfig = { ...defaultTelegramConfig };
+    this.telegramLogs = [...initialTelegramLogs];
     this.currentUserId = 'usr-1';
     this.saveAll();
   }
@@ -310,6 +342,8 @@ class DatabaseService {
     localStorage.setItem(STORAGE_KEYS.NETWORK_SETTINGS, JSON.stringify(this.networkSettings));
     localStorage.setItem(STORAGE_KEYS.NETWORK_LOGS, JSON.stringify(this.networkLogs));
     localStorage.setItem(STORAGE_KEYS.CURRENT_CONNECTION, JSON.stringify(this.currentConnection));
+    localStorage.setItem(STORAGE_KEYS.TELEGRAM_CONFIG, JSON.stringify(this.telegramConfig));
+    localStorage.setItem(STORAGE_KEYS.TELEGRAM_LOGS, JSON.stringify(this.telegramLogs));
     localStorage.setItem(STORAGE_KEYS.CURRENT_USER_ID, this.currentUserId);
   }
 
@@ -901,6 +935,179 @@ class DatabaseService {
     return true;
   }
 
+  // --- Streamlined Responsibility, Deadline & Priority Adjustments ---
+  public updatePlanScheduleAndPriority(
+    planId: string,
+    params: { dueDate?: string; priority?: PriorityLevel; reason?: string }
+  ): ActionPlan {
+    const actor = this.getCurrentUser();
+    const plan = this.plans.find(p => p.id === planId);
+    if (!plan) throw new Error('Action Plan not found.');
+
+    const changes: string[] = [];
+    if (params.dueDate && params.dueDate !== plan.dueDate) {
+      changes.push(`Deadline shifted from ${plan.dueDate} to ${params.dueDate}`);
+      plan.dueDate = params.dueDate;
+    }
+    if (params.priority && params.priority !== plan.priority) {
+      changes.push(`Priority adjusted from ${plan.priority} to ${params.priority}`);
+      plan.priority = params.priority;
+    }
+
+    plan.updatedAt = new Date().toISOString();
+    const reasonText = params.reason ? ` (Reason: "${params.reason}")` : '';
+    this.logAction(
+      actor.id,
+      actor.name,
+      'PLAN_SCHEDULE_ADJUSTMENT',
+      'Action Plans',
+      `Updated schedule/priority for ${plan.planNumber}: ${changes.join(', ')}${reasonText}`
+    );
+    this.saveAll();
+    return plan;
+  }
+
+  public updateActivityScheduleAndPriority(
+    activityId: string,
+    params: { dueDate?: string; priority?: PriorityLevel; reason?: string }
+  ): Activity {
+    const actor = this.getCurrentUser();
+    const activity = this.activities.find(a => a.id === activityId);
+    if (!activity) throw new Error('Activity not found.');
+
+    const changes: string[] = [];
+    if (params.dueDate && params.dueDate !== activity.dueDate) {
+      changes.push(`Due date changed from ${activity.dueDate} to ${params.dueDate}`);
+      activity.dueDate = params.dueDate;
+    }
+    if (params.priority && params.priority !== activity.priority) {
+      changes.push(`Priority changed from ${activity.priority} to ${params.priority}`);
+      activity.priority = params.priority;
+    }
+    if (params.reason) {
+      activity.lastAdjustmentReason = params.reason;
+    }
+
+    activity.updatedAt = new Date().toISOString();
+    this.logAction(
+      actor.id,
+      actor.name,
+      'ACTIVITY_SCHEDULE_ADJUSTMENT',
+      'Activities',
+      `Updated ${activity.code} (${activity.title}): ${changes.join(', ')}`
+    );
+    this.saveAll();
+    return activity;
+  }
+
+  // --- Collaboration, Team Sharing & Supervisor Feedback ---
+  public addPlanCollaborationReview(
+    planId: string,
+    reviewData: {
+      reviewerId: string;
+      reviewType: 'Supervisor Feedback' | 'Team Support' | 'Regular Goal Alignment' | 'Deadline Adjustment';
+      notes: string;
+      adjustmentProposed?: {
+        newDueDate?: string;
+        newPriority?: PriorityLevel;
+        reason?: string;
+      };
+    }
+  ): PlanCollaborationReview {
+    const actor = this.getCurrentUser();
+    const plan = this.plans.find(p => p.id === planId);
+    if (!plan) throw new Error('Action Plan not found.');
+
+    const newReview: PlanCollaborationReview = {
+      id: `rev-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      planId,
+      requestedById: actor.id,
+      reviewerId: reviewData.reviewerId,
+      reviewType: reviewData.reviewType,
+      status: 'Pending',
+      notes: reviewData.notes,
+      adjustmentProposed: reviewData.adjustmentProposed,
+      createdAt: new Date().toISOString(),
+    };
+
+    if (!plan.collaborationReviews) {
+      plan.collaborationReviews = [];
+    }
+    plan.collaborationReviews.unshift(newReview);
+
+    // Notify reviewer
+    const reviewer = this.users.find(u => u.id === reviewData.reviewerId);
+    if (reviewer) {
+      this.addNotification({
+        userId: reviewer.id,
+        title: `Collaboration Request: ${plan.planNumber}`,
+        message: `${actor.name} shared action plan "${plan.title}" for ${reviewData.reviewType}. Note: "${reviewData.notes.slice(0, 80)}"`,
+        type: 'approval_request',
+        entityType: 'action_plan',
+        entityId: plan.id,
+      });
+    }
+
+    this.logAction(
+      actor.id,
+      actor.name,
+      'PLAN_COLLABORATION_REQUEST',
+      'Collaboration',
+      `Shared plan ${plan.planNumber} with ${reviewer ? reviewer.name : 'colleague'} for ${reviewData.reviewType}`
+    );
+
+    this.saveAll();
+    return newReview;
+  }
+
+  // --- Regular Reviews & Goal Alignment Checkpoint ---
+  public recordPlanReview(
+    planId: string,
+    params: {
+      reviewNotes: string;
+      alignmentStatus: 'Fully Aligned' | 'Review Needed' | 'Shifted Priority';
+      nextReviewDate?: string;
+      reviewCycle?: 'Weekly' | 'Bi-Weekly' | 'Monthly' | 'Quarterly';
+    }
+  ): ActionPlan {
+    const actor = this.getCurrentUser();
+    const plan = this.plans.find(p => p.id === planId);
+    if (!plan) throw new Error('Action Plan not found.');
+
+    const today = new Date().toISOString().split('T')[0];
+    plan.lastReviewDate = today;
+    plan.alignmentStatus = params.alignmentStatus;
+    if (params.nextReviewDate) {
+      plan.nextReviewDate = params.nextReviewDate;
+    }
+    if (params.reviewCycle) {
+      plan.reviewCycle = params.reviewCycle;
+    }
+    plan.updatedAt = new Date().toISOString();
+
+    // Add progress/review update entry
+    this.addProgressUpdate({
+      entityType: 'action_plan',
+      entityId: plan.id,
+      previousPercentage: plan.completionPercentage,
+      newPercentage: plan.completionPercentage,
+      description: `Periodic Goal Alignment Checkpoint: ${params.alignmentStatus}`,
+      completedWork: params.reviewNotes,
+      actualKpiResult: `KPI Target: ${plan.kpiTarget} ${plan.kpiUnit} (Actual: ${plan.kpiActual})`,
+    });
+
+    this.logAction(
+      actor.id,
+      actor.name,
+      'PLAN_GOAL_ALIGNMENT_REVIEW',
+      'Goal Alignment',
+      `Recorded periodic review for ${plan.planNumber}: ${params.alignmentStatus} (Notes: ${params.reviewNotes.slice(0, 60)})`
+    );
+
+    this.saveAll();
+    return plan;
+  }
+
   // --- Activities ---
   public getActivities(planId?: string): Activity[] {
     if (planId) {
@@ -1200,7 +1407,7 @@ class DatabaseService {
       });
     }
 
-    this.logAction(actor.id, actor.name, `APPROVAL_${action.toUpperCase().replace(/\s+/g, '_')}`, 'Approvals', `${action} on plan ${plan.planNumber}`);
+    this.logAction(actor.id, actor.name, `APPROVAL_${String(action || 'ACTION').toUpperCase().replace(/\s+/g, '_')}`, 'Approvals', `${action} on plan ${plan.planNumber}`);
     this.saveAll();
     return plan;
   }
@@ -1257,14 +1464,26 @@ class DatabaseService {
     };
   }
 
-  // --- Attendance Management ---
+  // --- Attendance Management & Privacy Access Control ---
   public getAttendanceRecords(filter?: {
     date?: string;
     userId?: string;
     departmentId?: string;
     month?: string;
     status?: string;
+    requestingUser?: User;
   }): AttendanceRecord[] {
+    // If requestingUser is provided and has role 'Employee', strictly enforce privacy: employees only see their own records
+    if (filter?.requestingUser && filter.requestingUser.role === 'Employee') {
+      return this.attendanceRecords.filter(rec => {
+        if (rec.userId !== filter.requestingUser!.id) return false;
+        if (filter?.date && rec.date !== filter.date) return false;
+        if (filter?.month && !rec.date.startsWith(filter.month)) return false;
+        if (filter?.status && filter.status !== 'all' && rec.status !== filter.status) return false;
+        return true;
+      });
+    }
+
     return this.attendanceRecords.filter(rec => {
       if (filter?.date && rec.date !== filter.date) return false;
       if (filter?.userId && filter.userId !== 'all' && rec.userId !== filter.userId) return false;
@@ -1273,6 +1492,75 @@ class DatabaseService {
       if (filter?.status && filter.status !== 'all' && rec.status !== filter.status) return false;
       return true;
     });
+  }
+
+  /**
+   * Strictly enforces Privacy & Access Control for Attendance:
+   * Employees can only access their own attendance records.
+   * Supervisors (Team Leaders), Department Managers, and Administrators can access attendance for their team/organization.
+   */
+  public getAuthorizedAttendanceRecords(user: User, filter?: {
+    date?: string;
+    userId?: string;
+    departmentId?: string;
+    month?: string;
+    status?: string;
+  }): AttendanceRecord[] {
+    let list = this.getAttendanceRecords(filter);
+    if (user.role === 'Employee') {
+      // Strict privacy mandate: Employees can only access their own records
+      return list.filter(r => r.userId === user.id);
+    }
+    if (user.role === 'Team Leader' || user.role === 'Department Manager') {
+      if (filter?.userId && filter.userId !== 'all') {
+        return list.filter(r => r.userId === filter.userId);
+      }
+      if (filter?.departmentId && filter.departmentId !== 'all') {
+        return list.filter(r => r.departmentId === filter.departmentId);
+      }
+      // Defaults to their own department + self
+      if (user.departmentId) {
+        return list.filter(r => r.departmentId === user.departmentId || r.userId === user.id);
+      }
+    }
+    return list;
+  }
+
+  /**
+   * Check if a user has authority to view or manage attendance records for other personnel.
+   */
+  public canAccessOthersAttendance(user: User): boolean {
+    return ['Super Admin', 'Administrator', 'Department Manager', 'Team Leader'].includes(user.role);
+  }
+
+  /**
+   * Retrieve the designated supervisor for an employee (Team Leader or Department Manager).
+   */
+  public getSupervisorForUser(user: User): User | undefined {
+    if (!user.departmentId) return undefined;
+    // First check for Team Leader in the department
+    const teamLeader = this.users.find(u => u.departmentId === user.departmentId && u.role === 'Team Leader' && u.id !== user.id);
+    if (teamLeader) return teamLeader;
+    // Next check for Department Manager
+    const deptManager = this.users.find(u => u.departmentId === user.departmentId && u.role === 'Department Manager' && u.id !== user.id);
+    if (deptManager) return deptManager;
+    // Fallback to Administrator
+    return this.users.find(u => u.role === 'Administrator');
+  }
+
+  /**
+   * Retrieve HR contact details for attendance and leave assistance inquiries.
+   */
+  public getHrContact(): { hrDirector?: User; email: string; phone: string; departmentName: string; office: string } {
+    const hrDirector = this.users.find(u => u.departmentId === 'dept-4' && (u.role === 'Department Manager' || u.role === 'Administrator')) 
+      || this.users.find(u => u.name.includes('Kolab'));
+    return {
+      hrDirector,
+      email: hrDirector?.email || 'hr.governance@enterprise.gov.kh',
+      phone: hrDirector?.phone || '+855 12 990 011',
+      departmentName: 'Human Resources & Workforce Governance',
+      office: 'Building B, Room 204 (HR Operations Desk)'
+    };
   }
 
   public getTodayAttendance(userId?: string): AttendanceRecord | undefined {
@@ -1317,14 +1605,18 @@ class DatabaseService {
 
     const isZeroSignal = Boolean(privacyOptions?.isManualZeroSignal);
     const targetIp = networkOptions?.clientIp || this.currentConnection.clientIp;
-    const ipCheck = checkIpAgainstNetworks(targetIp, this.networks);
+    const ipCheck = checkIpAgainstNetworks(targetIp, this.networks, this.networkSettings.allowedSpecificIps);
     const isWhitelisted = ipCheck.isWhitelisted;
     const matchedNetwork = ipCheck.matchedNetwork || this.networks.find(n => n.id === networkOptions?.networkId);
 
-    // Enforce Network Whitelist Policy if in Strict Mode (Only Admin-managed authorized Internet accepts check-in)
-    const isSuperOrAdmin = user.role === 'Super Admin' || user.role === 'Admin';
+    // Enforce Network Whitelist Policy if in Strict Mode (Only Admin-managed authorized IPs accept check-in)
+    const isSuperOrAdmin = user.role === 'Super Admin' || user.role === 'Administrator';
     if (this.networkSettings.enforceMode === 'Strict' && !isWhitelisted && !isSuperOrAdmin) {
-      const activeSsids = this.networks.filter(n => n.status === 'Active').map(n => n.ssid).join(', ');
+      const activeIps = [
+        ...(this.networkSettings.allowedSpecificIps || []),
+        ...this.networks.filter(n => n.status === 'Active').flatMap(n => n.allowedSpecificIps || n.ipRanges)
+      ].slice(0, 5).join(', ');
+
       this.logNetworkAccess({
         employeeId: user.id,
         employeeName: user.name,
@@ -1332,18 +1624,17 @@ class DatabaseService {
         clientIp: targetIp,
         matchedNetworkId: undefined,
         matchedNetworkName: undefined,
-        ssid: networkOptions?.ssid || this.currentConnection.ssid,
         whitelistStatus: 'Blocked (Non-Whitelisted)',
         action: 'Check-In',
         latencyMs: this.currentConnection.latencyMs,
         userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'Web Portal Client',
-        flaggedReason: `Check-in attempt from unauthorized Internet IP (${targetIp}) while Strict Admin Enforcement is active.`,
+        flaggedReason: `Check-in attempt from unauthorized IP (${targetIp}) while Strict IP Whitelist Enforcement is active.`,
       });
 
       return {
         success: false,
         blockedByPolicy: true,
-        message: `Check-in rejected: Only authorized Internet / workplace Wi-Fi networks managed by Admin (${activeSsids}) can accept check-in. Current IP: ${targetIp}.`,
+        message: `Check-in rejected: Current IP (${targetIp}) is not whitelisted. Only authorized specific IPs and workplace subnets (${activeIps}...) can accept check-in.`,
       };
     }
 
@@ -1386,9 +1677,9 @@ class DatabaseService {
     const defaultNotes = isLate 
       ? `Checked in late for ${shiftConfig.name} (Grace threshold: ${String(shiftConfig.lateGraceHour).padStart(2, '0')}:${String(shiftConfig.lateGraceMinute).padStart(2, '0')})`
       : isZeroSignal
-      ? `Punctual manual check-in for ${shiftConfig.name} (Zero GPS & Wi-Fi Tracking)`
+      ? `Punctual manual check-in for ${shiftConfig.name} (Zero GPS & Telemetry Tracking)`
       : isWhitelisted
-      ? `Punctual check-in via Workplace Wi-Fi [${matchedNetwork?.ssid || 'Whitelisted'}]`
+      ? `Punctual check-in via Authorized IP [${targetIp}]`
       : `Punctual check-in for ${shiftConfig.name}`;
 
     const newRecord: AttendanceRecord = {
@@ -1422,7 +1713,7 @@ class DatabaseService {
       networkWhitelisted: isWhitelisted,
       networkId: matchedNetwork?.id,
       networkName: matchedNetwork?.name,
-      ssid: matchedNetwork?.ssid || (isWhitelisted ? this.currentConnection.ssid : undefined),
+      ssid: undefined,
       seamlessVerified: Boolean(isWhitelisted && (matchedNetwork?.allowSeamlessCheckIn ?? true)),
     };
 
@@ -1439,7 +1730,7 @@ class DatabaseService {
       user.name,
       'ATTENDANCE_CHECKIN',
       'Attendance',
-      `Checked in for ${shiftConfig.name} at ${timeStr} (${status}). Wi-Fi Whitelisted: ${isWhitelisted ? 'Yes (' + (matchedNetwork?.ssid || 'Verified') + ')' : 'No (External)'}`
+      `Checked in for ${shiftConfig.name} at ${timeStr} (${status}). IP Whitelisted: ${isWhitelisted ? 'Yes (' + targetIp + ')' : 'No (External)'}`
     );
 
     // Live network telemetry audit log
@@ -1450,7 +1741,7 @@ class DatabaseService {
       clientIp: targetIp,
       matchedNetworkId: matchedNetwork?.id,
       matchedNetworkName: matchedNetwork?.name,
-      ssid: matchedNetwork?.ssid || this.currentConnection.ssid,
+      ssid: undefined,
       whitelistStatus: isWhitelisted
         ? (matchedNetwork?.securityType.includes('VPN') ? 'VPN-Secured' : 'Whitelisted (Seamless)')
         : 'External / Remote',
@@ -1463,7 +1754,7 @@ class DatabaseService {
     this.addNotification({
       userId: user.id,
       title: isZeroSignal ? 'Zero-Tracking Check-In Confirmed' : 'Attendance Check-In Confirmed',
-      message: `Successfully registered check-in for ${shiftConfig.name} at ${timeStr} on ${today} (${status}). ${isWhitelisted ? 'Verified via workplace Wi-Fi: ' + (matchedNetwork?.ssid || 'Whitelisted') : ''}`,
+      message: `Successfully registered check-in for ${shiftConfig.name} at ${timeStr} on ${today} (${status}). ${isWhitelisted ? 'Verified via authorized IP: ' + targetIp : ''}`,
       type: 'progress',
     });
 
@@ -1472,9 +1763,9 @@ class DatabaseService {
       success: true, 
       record: newRecord, 
       message: isZeroSignal 
-        ? `Zero-tracking manual check-in recorded for ${shiftConfig.name} at ${timeStr} (No GPS/Wi-Fi logged).`
+        ? `Zero-tracking manual check-in recorded for ${shiftConfig.name} at ${timeStr} (No GPS/Telemetry logged).`
         : isWhitelisted
-        ? `Seamless check-in verified via ${matchedNetwork?.name || 'Workplace Wi-Fi'} at ${timeStr} (${status}).`
+        ? `Seamless check-in verified via authorized IP (${targetIp}) at ${timeStr} (${status}).`
         : `Check-in recorded for ${shiftConfig.name} at ${timeStr} (${status}).` 
     };
   }
@@ -1506,14 +1797,18 @@ class DatabaseService {
       };
     }
 
-    // Enforce Network Whitelist Policy if in Strict Mode (Only Admin-managed authorized Internet accepts check-out)
+    // Enforce Network Whitelist Policy if in Strict Mode (Only Admin-managed authorized IPs accept check-out)
     const targetIp = this.currentConnection.clientIp;
-    const ipCheck = checkIpAgainstNetworks(targetIp, this.networks);
+    const ipCheck = checkIpAgainstNetworks(targetIp, this.networks, this.networkSettings.allowedSpecificIps);
     const isWhitelisted = ipCheck.isWhitelisted;
-    const isSuperOrAdmin = user.role === 'Super Admin' || user.role === 'Admin';
+    const isSuperOrAdmin = user.role === 'Super Admin' || user.role === 'Administrator';
 
     if (this.networkSettings.enforceMode === 'Strict' && !isWhitelisted && !isSuperOrAdmin) {
-      const activeSsids = this.networks.filter(n => n.status === 'Active').map(n => n.ssid).join(', ');
+      const activeIps = [
+        ...(this.networkSettings.allowedSpecificIps || []),
+        ...this.networks.filter(n => n.status === 'Active').flatMap(n => n.allowedSpecificIps || n.ipRanges)
+      ].slice(0, 5).join(', ');
+
       this.logNetworkAccess({
         employeeId: user.id,
         employeeName: user.name,
@@ -1521,17 +1816,16 @@ class DatabaseService {
         clientIp: targetIp,
         matchedNetworkId: undefined,
         matchedNetworkName: undefined,
-        ssid: this.currentConnection.ssid,
         whitelistStatus: 'Blocked (Non-Whitelisted)',
         action: 'Check-Out',
         latencyMs: this.currentConnection.latencyMs,
         userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'Web Portal Client',
-        flaggedReason: `Check-out attempt from unauthorized Internet IP (${targetIp}) while Strict Admin Enforcement is active.`,
+        flaggedReason: `Check-out attempt from unauthorized IP (${targetIp}) while Strict IP Whitelist Enforcement is active.`,
       });
 
       return {
         success: false,
-        message: `Check-out rejected: Only authorized Internet / workplace Wi-Fi networks managed by Admin (${activeSsids}) can accept check-out. Current IP: ${targetIp}.`,
+        message: `Check-out rejected: Current IP (${targetIp}) is not whitelisted. Only authorized specific IPs and workplace subnets (${activeIps}...) can accept check-out.`,
       };
     }
 
@@ -1931,7 +2225,7 @@ class DatabaseService {
 
     const newReport: MonthlyAttendanceReport = {
       id: `rep-m-${Date.now()}`,
-      reportCode: `REP-ATT-${month.replace('-', '')}-${Math.floor(100 + Math.random() * 900)}`,
+      reportCode: `REP-ATT-${String(month || '2026-09').replace(/-/g, '')}-${Math.floor(100 + Math.random() * 900)}`,
       month,
       monthLabel,
       departmentId,
@@ -2387,18 +2681,88 @@ class DatabaseService {
     return simulatedConnectionProfiles;
   }
 
-  public testIpAgainstWhitelist(ip: string): { isWhitelisted: boolean; matchedNetwork?: WorkplaceNetwork; reason: string } {
-    const result = checkIpAgainstNetworks(ip, this.networks);
-    if (result.isWhitelisted && result.matchedNetwork) {
+  public getAllowedSpecificIps(): string[] {
+    return this.networkSettings.allowedSpecificIps || [];
+  }
+
+  public addAllowedSpecificIp(ip: string): boolean {
+    const clean = (ip || '').trim();
+    if (!clean) return false;
+    const current = this.networkSettings.allowedSpecificIps || [];
+    if (!current.includes(clean)) {
+      this.networkSettings.allowedSpecificIps = [...current, clean];
+      this.networkSettings.lastUpdated = new Date().toISOString();
+      this.saveAll();
+      const curUser = this.getCurrentUser();
+      this.logAction(
+        curUser.id,
+        curUser.name,
+        'SPECIFIC_IP_WHITELIST_ADDED',
+        'Network & Security',
+        `Added authorized specific IP address "${clean}" for attendance check-in/checkout`
+      );
+      return true;
+    }
+    return false;
+  }
+
+  public removeAllowedSpecificIp(ip: string): boolean {
+    const current = this.networkSettings.allowedSpecificIps || [];
+    this.networkSettings.allowedSpecificIps = current.filter(item => item !== ip);
+    this.networkSettings.lastUpdated = new Date().toISOString();
+    this.saveAll();
+    const curUser = this.getCurrentUser();
+    this.logAction(
+      curUser.id,
+      curUser.name,
+      'SPECIFIC_IP_WHITELIST_REMOVED',
+      'Network & Security',
+      `Removed authorized specific IP address "${ip}" from attendance whitelist`
+    );
+    return true;
+  }
+
+  public setAllowedSpecificIps(ips: string[]): void {
+    this.networkSettings.allowedSpecificIps = ips.map(i => i.trim()).filter(Boolean);
+    this.networkSettings.lastUpdated = new Date().toISOString();
+    this.saveAll();
+  }
+
+  public setCustomClientIp(ip: string): CurrentNetworkConnection {
+    const cleanIp = (ip || '').trim();
+    const check = checkIpAgainstNetworks(cleanIp, this.networks, this.networkSettings.allowedSpecificIps);
+    this.currentConnection = {
+      ...this.currentConnection,
+      clientIp: cleanIp,
+      isWhitelisted: check.isWhitelisted,
+      seamlessEligible: check.isWhitelisted && this.networkSettings.seamlessCheckInEnabled,
+      networkName: check.matchedNetwork ? check.matchedNetwork.name : (check.isWhitelisted ? `Authorized Specific Static IP (${cleanIp})` : 'External / Remote IP'),
+      connectionType: check.isWhitelisted ? 'Specific Allowed IP' : 'External / Remote IP',
+    };
+    this.saveAll();
+    return { ...this.currentConnection };
+  }
+
+  public testIpAgainstWhitelist(ip: string): { isWhitelisted: boolean; matchedNetwork?: WorkplaceNetwork; matchedIp?: string; reason: string } {
+    const result = checkIpAgainstNetworks(ip, this.networks, this.networkSettings.allowedSpecificIps);
+    if (result.isWhitelisted) {
+      if (result.matchedNetwork) {
+        return {
+          isWhitelisted: true,
+          matchedNetwork: result.matchedNetwork,
+          matchedIp: result.matchedIp,
+          reason: `Matched authorized network "${result.matchedNetwork.name}". Eligible for check-in and check-out.`
+        };
+      }
       return {
         isWhitelisted: true,
-        matchedNetwork: result.matchedNetwork,
-        reason: `Matched subnet in "${result.matchedNetwork.name}" (${result.matchedNetwork.ssid}). Eligible for seamless check-in.`
+        matchedIp: result.matchedIp || ip,
+        reason: `Matched authorized specific IP address "${result.matchedIp || ip}". Eligible for check-in and check-out.`
       };
     }
     return {
       isWhitelisted: false,
-      reason: `The IP address ${ip} does not match any registered workplace Wi-Fi subnet or VPN gateway.`
+      reason: `The IP address ${ip} does not match any registered workplace subnet or authorized specific IP.`
     };
   }
 
@@ -2422,9 +2786,64 @@ class DatabaseService {
     this.networkSettings = { ...defaultNetworkSettings };
     this.networkLogs = [...initialNetworkAccessLogs];
     this.currentConnection = { ...simulatedConnectionProfiles[0] };
+    this.telegramConfig = { ...defaultTelegramConfig };
+    this.telegramLogs = [...initialTelegramLogs];
     this.currentUserId = 'usr-1';
     this.setAuthenticated(true);
     this.saveAll();
+  }
+
+  // --- Telegram Bot Notifications & Alerts ---
+  public getTelegramConfig(): TelegramNotificationConfig {
+    return {
+      ...defaultTelegramConfig,
+      ...(this.telegramConfig || {}),
+    };
+  }
+
+  public saveTelegramConfig(config: TelegramNotificationConfig): void {
+    this.telegramConfig = {
+      ...defaultTelegramConfig,
+      ...config,
+    };
+    try {
+      localStorage.setItem(STORAGE_KEYS.TELEGRAM_CONFIG, JSON.stringify(this.telegramConfig));
+    } catch (err) {
+      console.error('Failed to save telegram config to localStorage:', err);
+    }
+  }
+
+  public getTelegramLogs(): TelegramNotificationLog[] {
+    const logs = Array.isArray(this.telegramLogs) ? this.telegramLogs : [];
+    return [...logs].sort(
+      (a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime()
+    );
+  }
+
+  public logTelegramNotification(log: TelegramNotificationLog): void {
+    this.telegramLogs.unshift(log);
+    if (this.telegramLogs.length > 200) {
+      this.telegramLogs = this.telegramLogs.slice(0, 200);
+    }
+    localStorage.setItem(STORAGE_KEYS.TELEGRAM_LOGS, JSON.stringify(this.telegramLogs));
+  }
+
+  public clearTelegramLogs(): void {
+    this.telegramLogs = [];
+    localStorage.setItem(STORAGE_KEYS.TELEGRAM_LOGS, JSON.stringify(this.telegramLogs));
+  }
+
+  public updateUserTelegram(
+    userId: string,
+    data: { telegramChatId?: string; telegramHandle?: string; telegramNotificationsEnabled?: boolean }
+  ): User | null {
+    const user = this.users.find(u => u.id === userId);
+    if (!user) return null;
+    if (data.telegramChatId !== undefined) user.telegramChatId = data.telegramChatId;
+    if (data.telegramHandle !== undefined) user.telegramHandle = data.telegramHandle;
+    if (data.telegramNotificationsEnabled !== undefined) user.telegramNotificationsEnabled = data.telegramNotificationsEnabled;
+    this.saveAll();
+    return { ...user };
   }
 }
 

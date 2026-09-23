@@ -39,6 +39,7 @@ import { QuickRequestModal } from './components/QuickRequestModal';
 import { AccessDeniedView } from './components/AccessDeniedView';
 import { RbacPermissionsModal } from './components/RbacPermissionsModal';
 import { VoiceAssistantModal } from './components/VoiceAssistantModal';
+import { checkAndRunScheduledAlerts } from './services/telegramService';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User>(() => db.getCurrentUser());
@@ -101,7 +102,7 @@ export default function App() {
   // Sync with URL Hash and prevent unauthorized direct URL manipulation
   useEffect(() => {
     const checkHash = () => {
-      const rawHash = window.location.hash.replace('#', '') as NavTab;
+      const rawHash = (window.location.hash || '').replace('#', '') as NavTab;
       if (rawHash && MENU_RBAC_POLICY[rawHash]) {
         if (canRoleAccessTab(currentUser.role, rawHash)) {
           setCurrentTab(rawHash);
@@ -117,6 +118,19 @@ export default function App() {
     window.addEventListener('hashchange', checkHash);
     return () => window.removeEventListener('hashchange', checkHash);
   }, [currentUser]);
+
+  // Automated background scheduler for advance pre-shift Telegram alerts
+  useEffect(() => {
+    // Initial check on load
+    checkAndRunScheduledAlerts(lang);
+
+    // Periodically run check every 60 seconds
+    const interval = setInterval(() => {
+      checkAndRunScheduledAlerts(lang);
+    }, 60000);
+
+    return () => clearInterval(interval);
+  }, [lang]);
 
   // Safe User & Role Switch
   const handleUserChange = (newUser: User) => {
@@ -208,6 +222,8 @@ export default function App() {
           isOpenMobile={isMobileNavOpen}
           onCloseMobile={() => setIsMobileNavOpen(false)}
           onOpenRbacMatrix={() => setShowRbacMatrixModal(true)}
+          onOpenVoiceAssistant={() => setIsVoiceAssistantOpen(true)}
+          onOpenFeedback={() => setIsFeedbackModalOpen(true)}
         />
 
         {/* Content Area - Full width with responsive padding */}
